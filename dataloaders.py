@@ -12,20 +12,20 @@ import tensorflow as tf
 class Base1(tf.keras.utils.Sequence):
     def __init__(
         self,
-        final_data_shape,
         batch_size,
         directory=None,
         classes=None,
+        channels=None,
         shuffle=True,
         validation_split=None,
         validation_batch_size=None,
         seed=None,
         file_info=None,
     ):
-        self.final_data_shape = final_data_shape
         self.batch_size = batch_size
         self.directory = directory
         self.classes = classes
+        self.channels = channels
         self.shuffle = shuffle
         self.validation_split = validation_split
         self.seed = 42 if seed is None else seed
@@ -76,6 +76,7 @@ class Base1(tf.keras.utils.Sequence):
             self.aux_dgen = None
 
         self.on_epoch_end()
+        self.data_shape = self._processing_function(self.pri_file_info[0][0]).shape
 
     def __len__(self):
         return len(self.pri_file_info) // self.batch_size
@@ -92,12 +93,14 @@ class Base1(tf.keras.utils.Sequence):
             np.random.shuffle(self.pri_file_info)
 
     def _batch_generator(self, batch_info):
-        Xb = np.zeros((self.batch_size, *self.final_data_shape))
-        Yb = np.zeros((self.batch_size), dtype=int)
+        Xb = np.empty((self.batch_size, *self.data_shape))
+        Yb = np.empty((self.batch_size), dtype=int)
         for i, (f, c) in enumerate(batch_info):
             Xb[i], Yb[i] = self._processing_function(f), c
         return Xb, Yb
 
     # This method should be overriden by the child class
-    def _processing_function(self, x):
+    # This method should including code for loading, processing, and returning a
+    # single data sample
+    def _processing_function(self, f):
         pass
