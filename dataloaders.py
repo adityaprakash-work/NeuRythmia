@@ -1,5 +1,6 @@
 # ---DEPENDENCIES---------------------------------------------------------------
 import os
+import glob
 
 import mne
 import numpy as np
@@ -14,6 +15,7 @@ class Base1(tf.keras.utils.Sequence):
         self,
         batch_size,
         directory=None,
+        file_extension=None,
         classes=None,
         channels=None,
         shuffle=True,
@@ -24,6 +26,7 @@ class Base1(tf.keras.utils.Sequence):
     ):
         self.batch_size = batch_size
         self.directory = directory
+        self.file_extension = file_extension
         self.classes = classes
         self.channels = channels
         self.shuffle = shuffle
@@ -36,12 +39,13 @@ class Base1(tf.keras.utils.Sequence):
                     "Directory must be specified if file_info is not given"
                 )
             self.file_info = [
-                [
-                    os.path.join(self.directory, self.classes[c], f),
-                    c,
-                ]
-                for c in range(len(self.classes))
-                for f in os.listdir(os.path.join(self.directory, self.classes[c]))
+                [path, c]
+                for c, class_name in enumerate(self.classes)
+                for path in glob.glob(
+                    os.path.join(
+                        self.directory, class_name, f'*.{self.file_extension or "*"}'
+                    )
+                )
             ]
         else:
             self.file_info = file_info
@@ -99,8 +103,104 @@ class Base1(tf.keras.utils.Sequence):
             Xb[i], Yb[i] = self._processing_function(f), c
         return Xb, Yb
 
-    # This method should be overriden by the child class
-    # This method should including code for loading, processing, and returning a
-    # single data sample
+    # This method should be overriden by the child class and should include code
+    # for loading, processing, and returning a single data sample
     def _processing_function(self, f):
         pass
+
+
+class EEGRaw(Base1):
+    valid_extensions = ["nrraw"]
+
+    def __init__(
+        self,
+        batch_size,
+        directory=None,
+        file_extension="nrraw",
+        classes=None,
+        channels=None,
+        shuffle=True,
+        validation_split=None,
+        validation_batch_size=None,
+        seed=None,
+        file_info=None,
+    ):
+        # Checking whether the file_extension is valid
+        # Using 'self' instead of 'EEGRaw' for allowing other extensions at instance
+        # level that can be handled by sophisticated '_processing_function'(s)
+        if file_extension not in self.valid_extensions:
+            raise ValueError(
+                f"Invalid file extension. Must be one of {self.valid_extensions}"
+            )
+
+        # Calling the parent class constructor
+        super().__init__(
+            batch_size=batch_size,
+            directory=directory,
+            file_extension=file_extension,
+            classes=classes,
+            channels=channels,
+            shuffle=shuffle,
+            validation_split=validation_split,
+            validation_batch_size=validation_batch_size,
+            seed=seed,
+            file_info=file_info,
+        )
+
+    # Normalizing across all channels
+    def _processing_function(self, f):
+        x = np.load(f)[..., self.channels]
+        x = (x - x.mean()) / x.std()
+        return x
+
+
+class EEGSpectrogram(Base1):
+    valid_extensions = ["nrspec", "nrraw"]
+
+    def __init__(
+        self,
+        batch_size,
+        directory=None,
+        file_extension="nrspec",
+        classes=None,
+        channels=None,
+        shuffle=True,
+        validation_split=None,
+        validation_batch_size=None,
+        seed=None,
+        file_info=None,
+        temporal=False,
+        spec_transform=None,
+    ):
+        # Check whether the file_extension is valid
+        # Using 'self' instead of 'EEGSpectrogram' for allowing other extensions at
+        # instance level that can be handled by sophisticated '_processing_function'(s)
+        if file_extension not in self.valid_extensions:
+            raise ValueError(
+                f"Invalid file extension. Must be one of {self.valid_extensions}"
+            )
+
+        # Call the parent class constructor
+        super().__init__(
+            batch_size=batch_size,
+            directory=directory,
+            file_extension=file_extension,
+            classes=classes,
+            channels=channels,
+            shuffle=shuffle,
+            validation_split=validation_split,
+            validation_batch_size=validation_batch_size,
+            seed=seed,
+            file_info=file_info,
+        )
+        self.temporal = temporal
+        self.spec_transform = spec_transform
+
+    def _processing_function(self, f):
+        x = np.load(f)[..., self.channels]
+        x = (x - x.mean()) / x.std()
+        if self.spec_transform is not None:
+            x = self.spec_transform(x)
+        if self.temporal:
+            x = x.reshape(x.shape[0], -1)
+        return x
