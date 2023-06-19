@@ -11,10 +11,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-# ---SPECTROGRAMS---------------------------------------------------------------
+# ---SPECTROGRAM----------------------------------------------------------------
 # The classes having a __call__ method are meant to act as stateful functions
-# to allow for repeated calls without the overhead of repeated initialization
-# of some of the variables and biolerplate code.
+# to allow for repeated calls without the overhead of initialization of some of
+# the variables and biolerplate code.
 class CohenTftb:
     """
     Wrapper for tftb.processing.cohen.<tfr>
