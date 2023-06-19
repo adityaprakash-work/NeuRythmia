@@ -17,8 +17,8 @@ import tftb
 import tensorflow as tf
 
 
-# ---BASES----------------------------------------------------------------------
-class Base1(tf.keras.utils.Sequence):
+# ---LOAD BASES-----------------------------------------------------------------
+class LoadBase1(tf.keras.utils.Sequence):
     def __init__(
         self,
         batch_size,
@@ -74,7 +74,7 @@ class Base1(tf.keras.utils.Sequence):
             self.aux_file_info = self.file_info[
                 ~np.isin(self.file_info, self.pri_file_info)
             ]
-            self.aux_dgen = Base1(
+            self.aux_dgen = LoadBase1(
                 data_shape=self.data_shape,
                 batch_size=self.validation_batch_size,
                 classes=self.classes,
@@ -117,7 +117,8 @@ class Base1(tf.keras.utils.Sequence):
         pass
 
 
-class EEGRaw(Base1):
+# ---EEG------------------------------------------------------------------------
+class EEGRaw(LoadBase1):
     valid_extensions = ["nrraw"]
 
     def __init__(
@@ -162,7 +163,7 @@ class EEGRaw(Base1):
         return x
 
 
-class EEGSpectrogram(Base1):
+class EEGSpectrogram(LoadBase1):
     valid_extensions = ["nrspec", "nrraw"]
 
     def __init__(
@@ -213,3 +214,11 @@ class EEGSpectrogram(Base1):
         if self.temporal:
             x = x.reshape(x.shape[0], -1)
         return x
+
+# ---WRITE BASES----------------------------------------------------------------
+class WriteBase1:
+    def __init__(self, dataset_name, classes, file_extension, save_dir):
+        self.dataset_name = dataset_name
+        self.classes = classes
+        self.file_extension = file_extension
+        self.save_dir = save_dir
