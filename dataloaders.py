@@ -1,3 +1,11 @@
+# ---INFO-----------------------------------------------------------------------
+# Author(s):       Aditya Prakash
+# Last Modified:   2023-06-18
+
+# --Needed functionalities
+# 1. Integration with tf.data.Dataset
+
+
 # ---DEPENDENCIES---------------------------------------------------------------
 import os
 import glob
@@ -196,6 +204,7 @@ class EEGSpectrogram(Base1):
         self.temporal = temporal
         self.spec_transform = spec_transform
 
+    # spec_transform shoudl work for multi-channel data sample
     def _processing_function(self, f):
         x = np.load(f)[..., self.channels]
         x = (x - x.mean()) / x.std()
