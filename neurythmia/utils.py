@@ -124,8 +124,9 @@ class NRMDataset:
 
     def info(self):
         print("NR >> NRMD Info: ")
-        for key in self.nrm and key != "files":
-            print(f"{key}: {self.nrm[key]}")
+        for key in self.nrm:
+            if key != "files":
+                print(f"{key}: {self.nrm[key]}")
 
 
 # ---EXTERNAL METADATA UTILS----------------------------------------------------
