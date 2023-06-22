@@ -14,7 +14,7 @@ DESCRIPTION = (
 URL = "https://github.com/adityaprakash-work/NeuRythmia.git"
 EMAIL = "adityaprakash.work@gmail.com"
 AUTHOR = "Aditya Prakash"
-REQUIRES_PYTHON = ">=3.11.0"
+REQUIRES_PYTHON = ">=3.9.0"
 VERSION = "0.0.1"
 REQUIRED = ["mne", "tftb", "tensorflow", "tqdm"]
 EXTRAS = {}
@@ -103,7 +103,7 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: Implementation :: CPython",
         "Programming Language :: Python :: Implementation :: PyPy",
     ],
