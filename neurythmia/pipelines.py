@@ -23,7 +23,7 @@ import scipy as sp
 import tftb
 import tensorflow as tf
 
-import utils
+from . import utils
 
 
 # ---LOAD BASES-----------------------------------------------------------------

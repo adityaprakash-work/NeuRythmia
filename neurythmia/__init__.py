@@ -8,6 +8,6 @@
 # ---CONSTANTS------------------------------------------------------------------
 
 # ---DEPENDENCIES---------------------------------------------------------------
-import utils
-import pipelines
-import transformations
+from . import utils
+from . import pipelines
+from . import transformations
