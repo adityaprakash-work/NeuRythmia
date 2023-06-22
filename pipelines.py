@@ -1,11 +1,13 @@
 # ---INFO-----------------------------------------------------------------------
 # Author(s):       Aditya Prakash
-# Last Modified:   2023-06-18
+# Last Modified:   2023-06-22
 
 # --Needed functionalities
 # 1. Integration with tf.data.Dataset
 # 2. Integration of loaders with NRM.json
 # 3. Refinement of NRMD.json and writers
+# 4. Constructing a NeuRythmia Dataset class with integrated features
+# 5. Deprecating separate loaders and writers
 
 
 # ---DEPENDENCIES---------------------------------------------------------------
@@ -13,6 +15,7 @@ import os
 from os.path import join as opj
 import glob
 import json
+import tqdm
 
 import mne
 import numpy as np
@@ -331,3 +334,57 @@ class WriteBase1:
                     )
         else:
             raise ValueError(f"File {file_name} does not exist")
+
+    def assimilate(self, path_to_nrd, file_extension, suffix):
+        if os.path.exists(path_to_nrd):
+            for cl in self.classes:
+                print(f"NR >> Assimilating class: {cl} from {os.basename(path_to_nrd)}")
+                for f in tqdm.tqdm(
+                    glob.glob(opj(path_to_nrd, cl, f"*.{file_extension}"))
+                ):
+                    try:
+                        d = self._processing(f)
+                        self.write(
+                            file_name=os.basename(f).split(".")[0] + suffix,
+                            tag=cl,
+                            data=d,
+                        )
+                    except:
+                        print(f"Failed to assimilate {f}")
+            self.metadata.update_size()
+            self.meradata.save(opj(self.base_dir, self.dataset_name, "NRMD.json"))
+        else:
+            raise ValueError(f"Path '{path_to_nrd}' does not exist")
+
+    def _processing(self, f):
+        raise NotImplementedError
+
+
+# ---EEG------------------------------------------------------------------------
+class EEGRawWriter(WriteBase1):
+    def __init__(
+        self,
+        dataset_name,
+        classes,
+        base_dir,
+        register=False,
+        s_time=0,
+        e_time=20,
+    ):
+        super().__init__(
+            dataset_name=dataset_name,
+            classes=classes,
+            file_extension="nrraw",
+            base_dir=base_dir,
+            register=register,
+        )
+        self.s_time = s_time
+        self.e_time = e_time
+        self.segment_length = int((self.e_time - self.s_time))
+
+    def _processing(self, f):
+        eegep = mne.io.read_raw_fif(f, verbose="ERROR")
+        sr = int(eegep.info["sfreq"])
+        data, _ = eegep[:, :]
+        segment = data[:, self.s_time * sr : self.e_time * sr].T
+        return segment

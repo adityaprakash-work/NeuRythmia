@@ -9,10 +9,66 @@
 from typing import Iterable
 
 import json
+import numpy as np
+
+import matplotlib.pyplot as plt
 
 
 # ---NRM------------------------------------------------------------------------
 class NRMDataset:
+    """
+    Class to handle the metadata of a dataset. The metadata is stored in a json
+    file with the following structure:
+    {
+        "dataset_name": <str>,
+        "classes": <list[str]>,
+        "file_extension": <str>,
+        "size": {
+            <class_name>: <int>,
+            ...
+        },
+        "data_shape": <tuple[int]>,
+        "files": {
+            <file_name>: [<tag>, ...],
+            ...
+        }
+    }
+
+    Parameters
+    ----------
+    file_extension : str
+        File extension of the files in the dataset
+    dataset_name : str
+        Name of the dataset
+    classes : list[str]
+        List of classes in the dataset
+    path : str
+        Path to the json file containing the metadata
+
+    Returns
+    -------
+    nrm : NRMDataset
+        Instance of the NRMDataset class
+
+
+    Methods
+    -------
+    load(path)
+        Loads the metadata from the json file at the given path
+    save(path)
+        Saves the metadata to the json file at the given path
+    add(name, tag)
+        Adds a file with the given name and tag to the metadata
+    remove(name, tag=None, total_remove=False)
+        Removes a file with the given name and tag from the metadata
+    fetch_file(tags)
+        Fetches the names of the files with the given tags
+    update_size()
+        Updates the size of the dataset
+    info()
+        Prints the metadata
+    """
+
     def __init__(self, file_extension=None, dataset_name=None, classes=None, path=None):
         self.path = path
         if self.path is not None:
@@ -70,3 +126,71 @@ class NRMDataset:
         print("NR >> NRMD Info: ")
         for key in self.nrm and key != "files":
             print(f"{key}: {self.nrm[key]}")
+
+
+# ---EXTERNAL METADATA UTILS----------------------------------------------------
+def extract_timestamps(time_stamp: str):
+    """
+    Extracts the timestamps from the given string
+
+    Parameters
+    ----------
+    time_stamp : str
+        String containing the timestamps
+
+    Returns
+    -------
+    t1s : int
+        Start time in seconds
+    t2s : int
+        End time in seconds
+    duration : int
+        Duration in seconds
+    """
+    di = {"hr": 3600, "min": 60, "sec": 1}
+    co = time_stamp.split("to")
+    t1 = co[0].split()
+    t2 = co[1].split() if len(co) > 1 else None
+    t1s = 0
+    t2s = 0
+
+    for i in range(0, len(t1), 2):
+        t1s += int(t1[i]) * di[t1[i + 1]]
+    if type(t2) != type(None):
+        for i in range(0, len(t2), 2):
+            t2s += int(t2[i]) * di[t2[i + 1]]
+
+    duration = abs(t2s - t1s)
+
+    return t1s, t2s, duration
+
+
+# ---VISUALIZATION UTILS--------------------------------------------------------
+def plot_tfd(tfd, sf, title="test", cmap="magma", figsize=(10, 5)):
+    """
+    Plots the time-frequency distribution
+
+    Parameters
+    ----------
+    tfd : np.ndarray
+        Time-frequency distribution
+    sf : int
+        Sampling frequency
+    title : str, optional
+        Title of the plot, by default "test"
+    cmap : str, optional
+        Colormap to use, by default "magma"
+    figsize : tuple, optional
+        Figure size, by default (10, 5)
+    """
+    freq_axis = np.arange(tfd.shape[0]) / sf
+    time_axis = np.arange(tfd.shape[1]) / sf
+
+    plt.figure(figsize=figsize)
+    plt.pcolormesh(time_axis, freq_axis, tfd, cmap=cmap)
+    plt.title(title)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Frequency (Hz)")
+    plt.colorbar()
+
+    plt.show()
