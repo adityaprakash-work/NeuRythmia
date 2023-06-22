@@ -254,16 +254,13 @@ class WriteBase1:
                         classes=self.classes,
                     )
                     for cl in self.classes:
-                        os.makedirs(
-                            opj(self.base_dir, self.dataset_name, cl),
-                            exist_ok=True,
-                        )
+                        os.path.exists(opj(self.base_dir, self.dataset_name, cl))
                         for f in glob.glob(
                             opj(
                                 self.base_dir,
                                 self.dataset_name,
                                 cl,
-                                f"*.{self.file_extension}",
+                                f"*.*",
                             )
                         ):
                             self.metadata.add(
