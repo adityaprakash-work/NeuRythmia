@@ -111,7 +111,7 @@ class NRMDataset:
                     raise ValueError(f"File '{name}' does not have tag <{tag}>")
                 self.nrm["files"][name].remove(tag)
 
-    def fetch_file(self, tags: Iterable[str]):
+    def fetch(self, tags: Iterable[str]):
         file_names = []
         for file_name in self.nrm["files"]:
             if all([tag in self.nrm["files"][file_name] for tag in tags]):
