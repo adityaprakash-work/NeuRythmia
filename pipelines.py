@@ -4,17 +4,23 @@
 
 # --Needed functionalities
 # 1. Integration with tf.data.Dataset
+# 2. Integration of loaders with NRM.json
+# 3. Refinement of NRMD.json and writers
 
 
 # ---DEPENDENCIES---------------------------------------------------------------
 import os
+from os.path import join as opj
 import glob
+import json
 
 import mne
 import numpy as np
 import scipy as sp
 import tftb
 import tensorflow as tf
+
+import utils
 
 
 # ---LOAD BASES-----------------------------------------------------------------
@@ -48,11 +54,9 @@ class LoadBase1(tf.keras.utils.Sequence):
                 )
             self.file_info = [
                 [path, c]
-                for c, class_name in enumerate(self.classes)
+                for c, cln in enumerate(self.classes)
                 for path in glob.glob(
-                    os.path.join(
-                        self.directory, class_name, f'*.{self.file_extension or "*"}'
-                    )
+                    opj(self.directory, cln, f'*.{self.file_extension or "*"}')
                 )
             ]
         else:
@@ -88,7 +92,7 @@ class LoadBase1(tf.keras.utils.Sequence):
             self.aux_dgen = None
 
         self.on_epoch_end()
-        self.data_shape = self._processing_function(self.pri_file_info[0][0]).shape
+        self.data_shape = self._processing(self.pri_file_info[0][0]).shape
 
     def __len__(self):
         return len(self.pri_file_info) // self.batch_size
@@ -108,18 +112,18 @@ class LoadBase1(tf.keras.utils.Sequence):
         Xb = np.empty((self.batch_size, *self.data_shape))
         Yb = np.empty((self.batch_size), dtype=int)
         for i, (f, c) in enumerate(batch_info):
-            Xb[i], Yb[i] = self._processing_function(f), c
+            Xb[i], Yb[i] = self._processing(f), c
         return Xb, Yb
 
     # This method should be overriden by the child class and should include code
     # for loading, processing, and returning a single data sample
-    def _processing_function(self, f):
-        pass
+    def _processing(self, f):
+        raise NotImplementedError
 
 
 # ---EEG------------------------------------------------------------------------
 class EEGRaw(LoadBase1):
-    valid_extensions = ["nrraw"]
+    supported_extensions = ["nrraw"]
 
     def __init__(
         self,
@@ -134,12 +138,12 @@ class EEGRaw(LoadBase1):
         seed=None,
         file_info=None,
     ):
-        # Checking whether the file_extension is valid
-        # Using 'self' instead of 'EEGRaw' for allowing other extensions at instance
-        # level that can be handled by sophisticated '_processing_function'(s)
-        if file_extension not in self.valid_extensions:
+        # Checking whether the file_extension is valid. Using 'self' instead of
+        # 'EEGRaw' for allowing other extensions at instance level that can be
+        # handled by sophisticated '_processing'(s)
+        if file_extension not in self.supported_extensions:
             raise ValueError(
-                f"Invalid file extension. Must be one of {self.valid_extensions}"
+                f"File extension must be one of {self.supported_extensions}"
             )
 
         # Calling the parent class constructor
@@ -157,14 +161,14 @@ class EEGRaw(LoadBase1):
         )
 
     # Normalizing across all channels
-    def _processing_function(self, f):
+    def _processing(self, f):
         x = np.load(f)[..., self.channels]
         x = (x - x.mean()) / x.std()
         return x
 
 
 class EEGSpectrogram(LoadBase1):
-    valid_extensions = ["nrspec", "nrraw"]
+    supported_extensions = ["nrspec", "nrraw"]
 
     def __init__(
         self,
@@ -181,12 +185,12 @@ class EEGSpectrogram(LoadBase1):
         temporal=False,
         spec_transform=None,
     ):
-        # Check whether the file_extension is valid
-        # Using 'self' instead of 'EEGSpectrogram' for allowing other extensions at
-        # instance level that can be handled by sophisticated '_processing_function'(s)
-        if file_extension not in self.valid_extensions:
+        # Check whether the file_extension is valid. Using 'self' instead of
+        # 'EEGSpectrogram' for allowing other extensions at instance level that
+        # can be handled by sophisticated '_processing'(s)
+        if file_extension not in self.supported_extensions:
             raise ValueError(
-                f"Invalid file extension. Must be one of {self.valid_extensions}"
+                f"File extension must be one of {self.supported_extensions}"
             )
 
         # Call the parent class constructor
@@ -205,8 +209,8 @@ class EEGSpectrogram(LoadBase1):
         self.temporal = temporal
         self.spec_transform = spec_transform
 
-    # spec_transform shoudl work for multi-channel data sample
-    def _processing_function(self, f):
+    # spec_transform should work for multi-channel data sample
+    def _processing(self, f):
         x = np.load(f)[..., self.channels]
         x = (x - x.mean()) / x.std()
         if self.spec_transform is not None:
@@ -215,10 +219,115 @@ class EEGSpectrogram(LoadBase1):
             x = x.reshape(x.shape[0], -1)
         return x
 
+
 # ---WRITE BASES----------------------------------------------------------------
 class WriteBase1:
-    def __init__(self, dataset_name, classes, file_extension, save_dir):
+    def __init__(
+        self,
+        dataset_name=None,
+        classes=None,
+        file_extension=None,
+        base_dir=None,
+        register=False,
+    ):
         self.dataset_name = dataset_name
         self.classes = classes
         self.file_extension = file_extension
-        self.save_dir = save_dir
+        self.base_dir = base_dir
+        self.register = register
+
+        if os.path.exists(opj(self.base_dir, dataset_name)):
+            print(f"NR >> Dataset '{self.dataset_name}' already exists")
+            try:
+                self.metadata = utils.NRMDataset(
+                    path=opj(self.base_dir, self.dataset_name, "NRMD.json")
+                )
+                self.metadata.info()
+            except:
+                if register:
+                    self.metadata = utils.NRMDataset(
+                        file_extension=self.file_extension,
+                        dataset_name=self.dataset_name,
+                        classes=self.classes,
+                    )
+                    for cl in self.classes:
+                        os.makedirs(
+                            opj(self.base_dir, self.dataset_name, cl),
+                            exist_ok=True,
+                        )
+                        for f in glob.glob(
+                            opj(
+                                self.base_dir,
+                                self.dataset_name,
+                                cl,
+                                f"*.{self.file_extension}",
+                            )
+                        ):
+                            self.metadata.add(
+                                name=os.path.basename(f).split(".")[0],
+                                tag=cl,
+                            )
+                    self.metadata.update_size()
+                    self.metadata.save(
+                        opj(self.base_dir, self.dataset_name, "NRMD.json")
+                    )
+                else:
+                    raise ValueError("NR >> Missing NRMD.json")
+        else:
+            print(f"NR >> Creating Dataset: '{self.dataset_name}'")
+            for cl in self.classes:
+                os.makedirs(opj(self.base_dir, self.dataset_name, cl))
+            self.metadata = utils.NRMDataset(
+                file_extension=self.file_extension,
+                dataset_name=self.dataset_name,
+                classes=self.classes,
+            )
+
+    def write(self, file_name, tag, data=None):
+        if file_name in self.metadata.nrm["files"]:
+            if tag in self.metadata.nrm["files"][file_name]:
+                # Overwrite not allowed
+                raise ValueError(f"File '{file_name}' already has tag <{tag}>")
+        else:
+            if tag in self.metadata.nrm["classes"]:
+                np.save(
+                    opj(
+                        self.base_dir,
+                        self.dataset_name,
+                        tag,
+                        f"{file_name}.{self.metadata.nrm['file_extension']}",
+                    ),
+                    data,
+                )
+            else:
+                # First tag should be the class label
+                raise ValueError(
+                    f"First tag should be one of {self.metadata.nrm['classes']}"
+                )
+        self.metadata.add(name=file_name, tag=tag)
+
+    def erase(self, file_name, tag=None, total_erase=False):
+        if file_name in self.metadata.nrm["files"]:
+            if total_erase:
+                if (
+                    tag in self.metadata.nrm["files"][file_name]
+                    and tag in self.metadata.nrm["classes"]
+                ):
+                    os.remove(
+                        opj(
+                            self.base_dir,
+                            self.dataset_name,
+                            tag,
+                            f"{file_name}.{self.metadata.nrm['file_extension']}",
+                        )
+                    )
+                    self.metadata.remove(name=file_name, total_remove=True)
+            else:
+                if tag in self.metadata.nrm["files"][file_name]:
+                    self.metadata.remove(name=file_name, tag=tag)
+                else:
+                    raise ValueError(
+                        f"File '{file_name}' does not have tag <{tag}> to erase"
+                    )
+        else:
+            raise ValueError(f"File {file_name} does not exist")
