@@ -15,14 +15,14 @@ import matplotlib.pyplot as plt
 
 
 # ---NRM------------------------------------------------------------------------
-class NRMDataset:
+class NRCM:
     """
     Class to handle the metadata of a dataset. The metadata is stored in a json
     file with the following structure:
     {
         "dataset_name": <str>,
         "classes": <list[str]>,
-        "file_extension": <str>,
+        "file_type": <str>,
         "size": {
             <class_name>: <int>,
             ...
@@ -36,19 +36,21 @@ class NRMDataset:
 
     Parameters
     ----------
-    file_extension : str
-        File extension of the files in the dataset
+    file_type : str
+        File type of the files in the dataset
     dataset_name : str
         Name of the dataset
     classes : list[str]
         List of classes in the dataset
     path : str
-        Path to the json file containing the metadata
+        Path to the json file containing the
+    data_shape : tuple[int]
+        Shape of the data in the files
 
     Returns
     -------
-    nrm : NRMDataset
-        Instance of the NRMDataset class
+    nrm : NRCM
+        Instance of the NRCM class
 
 
     Methods
@@ -69,7 +71,14 @@ class NRMDataset:
         Prints the metadata
     """
 
-    def __init__(self, file_extension=None, dataset_name=None, classes=None, path=None):
+    def __init__(
+        self,
+        file_type=None,
+        dataset_name=None,
+        classes=None,
+        data_shape=None,
+        path=None,
+    ):
         self.path = path
         if self.path is not None:
             self.nrm = self.load(self.path)
@@ -77,9 +86,9 @@ class NRMDataset:
             self.nrm = {}
             self.nrm["dataset_name"] = dataset_name
             self.nrm["classes"] = classes
-            self.nrm["file_extension"] = file_extension
+            self.nrm["file_type"] = file_type
             self.nrm["size"] = {f"{cl}": 0 for cl in classes}
-            self.nrm["data_shape"] = None
+            self.nrm["data_shape"] = data_shape
             self.nrm["files"] = {}
 
     def load(self, path):
@@ -118,12 +127,8 @@ class NRMDataset:
                 file_names.append(file_name)
         return file_names
 
-    def update_size(self):
-        for cl in self.nrm["size"]:
-            self.nrm["size"][cl] = len(self.fetch([cl]))
-
     def info(self):
-        print("NR >> NRMD Info: ")
+        print("NR >> NRCM Info: ")
         for key in self.nrm:
             if key != "files":
                 print(f"{key}: {self.nrm[key]}")

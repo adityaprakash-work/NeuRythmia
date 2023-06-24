@@ -12,7 +12,9 @@
 
 # ---DEPENDENCIES---------------------------------------------------------------
 import os
+from typing import Iterable
 from os.path import join as opj
+from os.path import exists as ope
 import glob
 import json
 import tqdm
@@ -32,7 +34,7 @@ class LoadBase1(tf.keras.utils.Sequence):
         self,
         batch_size,
         directory=None,
-        file_extension=None,
+        file_type=None,
         classes=None,
         channels=None,
         shuffle=True,
@@ -43,7 +45,7 @@ class LoadBase1(tf.keras.utils.Sequence):
     ):
         self.batch_size = batch_size
         self.directory = directory
-        self.file_extension = file_extension
+        self.file_type = file_type
         self.classes = classes
         self.channels = channels
         self.shuffle = shuffle
@@ -59,7 +61,7 @@ class LoadBase1(tf.keras.utils.Sequence):
                 [path, c]
                 for c, cln in enumerate(self.classes)
                 for path in glob.glob(
-                    opj(self.directory, cln, f'*.{self.file_extension or "*"}')
+                    opj(self.directory, cln, f'*.{self.file_type or "*"}')
                 )
             ]
         else:
@@ -126,13 +128,13 @@ class LoadBase1(tf.keras.utils.Sequence):
 
 # ---EEG------------------------------------------------------------------------
 class EEGRaw(LoadBase1):
-    supported_extensions = ["nrraw"]
+    supported_types = ["nrraw"]
 
     def __init__(
         self,
         batch_size,
         directory=None,
-        file_extension="nrraw",
+        file_type="nrraw",
         classes=None,
         channels=None,
         shuffle=True,
@@ -141,19 +143,17 @@ class EEGRaw(LoadBase1):
         seed=None,
         file_info=None,
     ):
-        # Checking whether the file_extension is valid. Using 'self' instead of
-        # 'EEGRaw' for allowing other extensions at instance level that can be
+        # Checking whether the file_type is valid. Using 'self' instead of
+        # 'EEGRaw' for allowing other types at instance level that can be
         # handled by sophisticated '_processing'(s)
-        if file_extension not in self.supported_extensions:
-            raise ValueError(
-                f"File extension must be one of {self.supported_extensions}"
-            )
+        if file_type not in self.supported_types:
+            raise ValueError(f"File type must be one of {self.supported_types}")
 
         # Calling the parent class constructor
         super().__init__(
             batch_size=batch_size,
             directory=directory,
-            file_extension=file_extension,
+            file_type=file_type,
             classes=classes,
             channels=channels,
             shuffle=shuffle,
@@ -171,13 +171,13 @@ class EEGRaw(LoadBase1):
 
 
 class EEGSpectrogram(LoadBase1):
-    supported_extensions = ["nrspec", "nrraw"]
+    supported_types = ["nrspec", "nrraw"]
 
     def __init__(
         self,
         batch_size,
         directory=None,
-        file_extension="nrspec",
+        file_type="nrspec",
         classes=None,
         channels=None,
         shuffle=True,
@@ -188,19 +188,17 @@ class EEGSpectrogram(LoadBase1):
         temporal=False,
         spec_transform=None,
     ):
-        # Check whether the file_extension is valid. Using 'self' instead of
-        # 'EEGSpectrogram' for allowing other extensions at instance level that
+        # Check whether the file_type is valid. Using 'self' instead of
+        # 'EEGSpectrogram' for allowing other types at instance level that
         # can be handled by sophisticated '_processing'(s)
-        if file_extension not in self.supported_extensions:
-            raise ValueError(
-                f"File extension must be one of {self.supported_extensions}"
-            )
+        if file_type not in self.supported_types:
+            raise ValueError(f"File type must be one of {self.supported_types}")
 
         # Call the parent class constructor
         super().__init__(
             batch_size=batch_size,
             directory=directory,
-            file_extension=file_extension,
+            file_type=file_type,
             classes=classes,
             channels=channels,
             shuffle=shuffle,
@@ -222,143 +220,6 @@ class EEGSpectrogram(LoadBase1):
             x = x.reshape(x.shape[0], -1)
         return x
 
-
-# ---WRITE BASES----------------------------------------------------------------
-class WriteBase1:
-    def __init__(
-        self,
-        dataset_name=None,
-        classes=None,
-        file_extension=None,
-        base_dir=None,
-        register=False,
-    ):
-        self.dataset_name = dataset_name
-        self.classes = classes
-        self.file_extension = file_extension
-        self.base_dir = base_dir
-        self.register = register
-
-        if os.path.exists(opj(self.base_dir, dataset_name)):
-            print(f"NR >> Dataset '{self.dataset_name}' already exists")
-            try:
-                self.metadata = utils.NRMDataset(
-                    path=opj(self.base_dir, self.dataset_name, "NRMD.json")
-                )
-                self.metadata.info()
-            except:
-                if register:
-                    self.metadata = utils.NRMDataset(
-                        file_extension=self.file_extension,
-                        dataset_name=self.dataset_name,
-                        classes=self.classes,
-                    )
-                    for cl in self.classes:
-                        os.path.exists(opj(self.base_dir, self.dataset_name, cl))
-                        for f in glob.glob(
-                            opj(
-                                self.base_dir,
-                                self.dataset_name,
-                                cl,
-                                f"*.*",
-                            )
-                        ):
-                            self.metadata.add(
-                                name=os.path.basename(f).split(".")[0],
-                                tag=cl,
-                            )
-                    self.metadata.update_size()
-                    self.metadata.save(
-                        opj(self.base_dir, self.dataset_name, "NRMD.json")
-                    )
-                else:
-                    raise ValueError("NR >> Missing NRMD.json")
-        else:
-            print(f"NR >> Creating Dataset: '{self.dataset_name}'")
-            for cl in self.classes:
-                os.makedirs(opj(self.base_dir, self.dataset_name, cl))
-            self.metadata = utils.NRMDataset(
-                file_extension=self.file_extension,
-                dataset_name=self.dataset_name,
-                classes=self.classes,
-            )
-
-    def write(self, file_name, tag, data=None):
-        if file_name in self.metadata.nrm["files"]:
-            if tag in self.metadata.nrm["files"][file_name]:
-                # Overwrite not allowed
-                raise ValueError(f"File '{file_name}' already has tag <{tag}>")
-        else:
-            if tag in self.metadata.nrm["classes"]:
-                np.save(
-                    opj(
-                        self.base_dir,
-                        self.dataset_name,
-                        tag,
-                        f"{file_name}.{self.metadata.nrm['file_extension']}",
-                    ),
-                    data,
-                )
-            else:
-                # First tag should be the class label
-                raise ValueError(
-                    f"First tag should be one of {self.metadata.nrm['classes']}"
-                )
-        self.metadata.add(name=file_name, tag=tag)
-
-    def erase(self, file_name, tag=None, total_erase=False):
-        if file_name in self.metadata.nrm["files"]:
-            if total_erase:
-                if (
-                    tag in self.metadata.nrm["files"][file_name]
-                    and tag in self.metadata.nrm["classes"]
-                ):
-                    os.remove(
-                        opj(
-                            self.base_dir,
-                            self.dataset_name,
-                            tag,
-                            f"{file_name}.{self.metadata.nrm['file_extension']}",
-                        )
-                    )
-                    self.metadata.remove(name=file_name, total_remove=True)
-            else:
-                if tag in self.metadata.nrm["files"][file_name]:
-                    self.metadata.remove(name=file_name, tag=tag)
-                else:
-                    raise ValueError(
-                        f"File '{file_name}' does not have tag <{tag}> to erase"
-                    )
-        else:
-            raise ValueError(f"File {file_name} does not exist")
-
-    def assimilate(self, path_to_nrd, file_extension, suffix):
-        if os.path.exists(path_to_nrd):
-            for cl in self.classes:
-                print(f"NR >> Assimilating class: {cl} from {os.basename(path_to_nrd)}")
-                for f in tqdm.tqdm(
-                    glob.glob(opj(path_to_nrd, cl, f"*.{file_extension}"))
-                ):
-                    try:
-                        d = self._processing(f)
-                        self.write(
-                            file_name=os.basename(f).split(".")[0] + suffix,
-                            tag=cl,
-                            data=d,
-                        )
-                    except:
-                        print(f"Failed to assimilate {f}")
-            self.metadata.update_size()
-            self.meradata.save(opj(self.base_dir, self.dataset_name, "NRMD.json"))
-        else:
-            raise ValueError(f"Path '{path_to_nrd}' does not exist")
-
-    def _processing(self, f):
-        raise NotImplementedError
-
-
-# ---EEG------------------------------------------------------------------------
-class EEGRawWriter(WriteBase1):
     def __init__(
         self,
         dataset_name,
@@ -371,7 +232,7 @@ class EEGRawWriter(WriteBase1):
         super().__init__(
             dataset_name=dataset_name,
             classes=classes,
-            file_extension="nrraw",
+            file_type="nrraw",
             base_dir=base_dir,
             register=register,
         )
@@ -385,3 +246,103 @@ class EEGRawWriter(WriteBase1):
         data, _ = eegep[:, :]
         segment = data[:, self.s_time * sr : self.e_time * sr].T
         return segment
+
+
+# ---NRDataset------------------------------------------------------------------
+class NRCDataset:
+    def __init__(self, base_dir, dataset_name):
+        self.base_dir = base_dir
+        self.dataset_name = dataset_name
+        self.path = opj(self.base_dir, self.dataset_name)
+
+        # flags
+        self._de = False  # Dataset exists
+        self._me = False  # metadata exists
+        self._cc = False  # can create
+
+        if ope(self.path):
+            self._de = True
+            if ope(opj(self.path, "nrcm.json")):
+                self.metadata = utils.NRCM(path=opj(self.path, "nrcm.json"))
+                self._me = True
+                print("NR > Registered dataset detected")
+            else:
+                print("NR > Unregistered dataset detected")
+        else:
+            self._cc = True
+            print("NR > No dataset found, create new")
+
+    def create(self, classes=None, file_type=None, data_shape=None):
+        if self._cc == True:
+            for cl in classes:
+                os.makedirs(opj(self.base_dir, self.dataset_name, cl))
+            self.metadata = utils.NRCM(
+                dataset_name=self.dataset_name,
+                classes=classes,
+                file_type=file_type,
+                data_shape=data_shape,
+            )
+            self.metadata.save(opj(self.path, "nrcm.json"))
+            self._cc = False
+            self._me = True
+            print(f"NR > Dataset created at {self.path}")
+        else:
+            raise ValueError("create(): called on an existing dataset")
+
+    def write(self, file_name, tag, data=None):
+        if self._me == False:
+            raise ValueError("write(): called on ambiguous dataset")
+        if file_name in self.metadata.nrm["files"]:
+            if tag in self.metadata.nrm["files"][file_name]:
+                # Overwrite not allowed
+                raise ValueError(f"'{file_name}' already has tag '{tag}'")
+        else:
+            if tag in self.metadata.nrm["classes"]:
+                if data is not None:
+                    np.save(
+                        opj(
+                            self.base_dir,
+                            self.dataset_name,
+                            tag,
+                            file_name,
+                        ),
+                        data,
+                    )
+                else:
+                    raise ValueError("NoneType data cannot be written")
+                self.metadata.nrm["size"][tag] += 1
+            else:
+                # First tag should be the class label
+                raise ValueError(
+                    f"First tag should be one of {self.metadata.nrm['classes']}"
+                )
+        self.metadata.add(name=file_name, tag=tag)
+
+    def erase(self, file_name, tag=None, total_erase=False):
+        if self._me == False:
+            raise ValueError("erase(): called on ambiguous dataset")
+        if file_name in self.metadata.nrm["files"]:
+            if total_erase:
+                cl = self.metadata.nrm["files"][file_name][0]
+                os.remove(
+                    opj(
+                        self.base_dir,
+                        self.dataset_name,
+                        cl,  # class name
+                        file_name + ".npy",
+                    )
+                )
+                self.metadata.remove(name=file_name, total_remove=True)
+                self.metadata.nrm["size"][cl] -= 1
+            else:
+                if tag in self.metadata.nrm["files"][file_name]:
+                    if tag not in self.metadata.nrm["classes"]:
+                        self.metadata.remove(name=file_name, tag=tag)
+                    else:
+                        raise ValueError(f"Class tag cannot be erased")
+                else:
+                    raise ValueError(
+                        f"File '{file_name}' does not have tag '{tag}' to erase"
+                    )
+        else:
+            raise ValueError(f"File {file_name} does not exist")
