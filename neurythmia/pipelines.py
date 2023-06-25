@@ -361,10 +361,10 @@ class NRCDataset:
                     file_type=file_type,
                 )
                 for fp in tqdm(glob.glob(opj(self.path, "**", f"*.{ext}"))):
-                    if drc == False:
+                    if dsr == False:
                         d = np.load(fp)
                         self.metadata.nrm["data_shape"] = d.shape
-                        drc = True
+                        dsr = True
                     fn = os.path.basename(fp).split(".")[0]
                     cn = os.path.basename(os.path.dirname(fp))
                     self.metadata.add(name=fn, tag=cn)
