@@ -350,6 +350,7 @@ class NRCDataset:
             raise ValueError(f"File {file_name} does not exist")
 
     def register(self, file_type, ext="npy"):
+        dsr = False
         if self._de == True:
             if self._me == False:
                 ld = os.listdir(self.path)
@@ -360,6 +361,10 @@ class NRCDataset:
                     file_type=file_type,
                 )
                 for fp in tqdm(glob.glob(opj(self.path, "**", f"*.{ext}"))):
+                    if drc == False:
+                        d = np.load(fp)
+                        self.metadata.nrm["data_shape"] = d.shape
+                        dsr = True
                     fn = os.path.basename(fp).split(".")[0]
                     cn = os.path.basename(os.path.dirname(fp))
                     self.metadata.add(name=fn, tag=cn)
@@ -413,4 +418,3 @@ class NRCDataset:
         )
         self.D.shuffle(len(fps))
         self.D = self.D.batch(batch_size=batch_size)
-        
