@@ -265,7 +265,7 @@ class NRCDataset:
             if ope(opj(self.path, "nrcm.json")):
                 self.metadata = utils.NRCM(path=opj(self.path, "nrcm.json"))
                 self._me = True
-                print("NR > Registered dataset detected")
+                print(f"NR > Registered dataset {self.dataset_name} detected")
             else:
                 print("NR > Unregistered dataset detected")
         else:
@@ -371,6 +371,7 @@ class NRCDataset:
                     self.metadata.nrm["size"][cn] += 1
                 self.metadata.save(opj(self.path, "nrcm.json"))
                 self._me = True
+                print(f"NR > Dataset {self.dataset_name} registered")
             else:
                 raise ValueError("register(): called on registered dataset")
         else:
@@ -418,3 +419,4 @@ class NRCDataset:
         )
         self.D.shuffle(len(fps))
         self.D = self.D.batch(batch_size=batch_size)
+        print(f"NR > Connected to dataset {self.dataset_name}")
