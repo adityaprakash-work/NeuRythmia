@@ -6,7 +6,7 @@
 
 
 # ---DEPENDENCIES---------------------------------------------------------------
-from typing import Iterable
+from typing import Iterable, Union
 
 import json
 import numpy as np
@@ -120,12 +120,30 @@ class NRCM:
                     raise ValueError(f"File '{name}' does not have tag <{tag}>")
                 self.nrm["files"][name].remove(tag)
 
-    def fetch(self, tags: Iterable[str]):
+    def fetch(
+        self, tag_combinations: Union[str, Iterable[str], Iterable[Iterable[str]]]
+    ):
         file_names = []
-        for file_name in self.nrm["files"]:
-            if all([tag in self.nrm["files"][file_name] for tag in tags]):
-                file_names.append(file_name)
-        return file_names
+        if isinstance(tag_combinations, str):
+            tag_combinations = [[tag_combinations]]
+        elif isinstance(tag_combinations, Iterable) and all(
+            isinstance(item, str) for item in tag_combinations
+        ):
+            tag_combinations = [tag_combinations]
+        elif isinstance(tag_combinations, Iterable) and all(
+            isinstance(subitem, Iterable)
+            and all(isinstance(subsubitem, str) for subsubitem in subitem)
+            for subitem in tag_combinations
+        ):
+            tag_combinations = list(tag_combinations)
+        else:
+            raise TypeError("Invalid tag_combinations type")
+
+        for tc in tag_combinations:
+            for file_name in self.nrm["files"]:
+                if all([tag in self.nrm["files"][file_name] for tag in tc]):
+                    file_names.append(file_name)
+        return set(file_names)
 
     def info(self):
         print("NR >> NRCM Info: ")

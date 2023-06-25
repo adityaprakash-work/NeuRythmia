@@ -12,12 +12,12 @@
 
 # ---DEPENDENCIES---------------------------------------------------------------
 import os
-from typing import Iterable
+from typing import Any, Iterable, Callable
 from os.path import join as opj
 from os.path import exists as ope
 import glob
 import json
-import tqdm
+from tqdm import tqdm
 
 import mne
 import numpy as np
@@ -272,6 +272,8 @@ class NRCDataset:
             self._cc = True
             print("NR > No dataset found, create new")
 
+        self.D = None  # td.data.Dataset
+
     def create(self, classes=None, file_type=None, data_shape=None):
         if self._cc == True:
             for cl in classes:
@@ -346,3 +348,69 @@ class NRCDataset:
                     )
         else:
             raise ValueError(f"File {file_name} does not exist")
+
+    def register(self, file_type, ext="npy"):
+        if self._de == True:
+            if self._me == False:
+                ld = os.listdir(self.path)
+                classes = [i for i in ld if os.path.isdir(opj(self.path, i))]
+                self.metadata = utils.NRCM(
+                    dataset_name=self.dataset_name,
+                    classes=classes,
+                    file_type=file_type,
+                )
+                for fp in tqdm(glob.glob(opj(self.path, "**", f"*.{ext}"))):
+                    fn = os.path.basename(fp).split(".")[0]
+                    cn = os.path.basename(os.path.dirname(fp))
+                    self.metadata.add(name=fn, tag=cn)
+                    self.metadata.nrm["size"][cn] += 1
+                self.metadata.save(opj(self.path, "nrcm.json"))
+                self._me = True
+            else:
+                raise ValueError("register(): called on registered dataset")
+        else:
+            raise ValueError("register(): called on non-existent dataset")
+
+    def _default_processor(self, paths, labels):
+        for path, label in zip(paths, labels):
+            yield np.load(path), label
+
+    def connect(
+        self,
+        tag_combinations=None,
+        batch_size=8,
+        processor=None,
+        categorical=True,
+        enforce_binary=False,
+    ):
+        if self._de == False:
+            raise ValueError("connect(): called on non-existent dataset")
+        if self._me == False:
+            raise ValueError("connect(): called without nrcm.json")
+        self.D = None  # Dataset set to None
+        if tag_combinations is None:
+            tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
+        if processor is None:
+            processor = self._default_processor
+
+        fns = self.metadata.fetch(tag_combinations)
+        fls = [self.metadata.nrm["files"][fn][0] for fn in fns]
+        fps = [opj(self.path, cln, fn + ".npy") for cln, fn in zip(fls, fns)]
+        ils = [self.metadata.nrm["classes"].index(cln) for cln in fls]
+        n_classes = len(np.unique(ils))
+        if enforce_binary:
+            if n_classes != 2:
+                raise ValueError("Binary label cannot be enforced, classes > 2")
+            else:
+                ils = np.array(ils) // np.array(ils).max()
+        else:
+            if categorical:
+                ils = tf.keras.utils.to_categorical(ils, num_classes=n_classes)
+            else:
+                ils = np.array(ils)
+        self.D = tf.data.Dataset.from_generator(
+            lambda: processor(fps, ils), (tf.float32, tf.float32)
+        )
+        self.D.shuffle(len(fps))
+        self.D = self.D.batch(batch_size=batch_size)
+        

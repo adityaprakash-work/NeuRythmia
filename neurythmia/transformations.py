@@ -102,3 +102,6 @@ def window_aggregate(arr, ax0idxs, ax1idxs):
                 axis=(0, 1),
             )
     return warr
+
+
+# ---PROCESSORS-----------------------------------------------------------------
