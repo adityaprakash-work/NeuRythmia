@@ -364,7 +364,7 @@ class NRCDataset:
                     if drc == False:
                         d = np.load(fp)
                         self.metadata.nrm["data_shape"] = d.shape
-                        dsr = True
+                        drc = True
                     fn = os.path.basename(fp).split(".")[0]
                     cn = os.path.basename(os.path.dirname(fp))
                     self.metadata.add(name=fn, tag=cn)
