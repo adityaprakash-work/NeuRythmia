@@ -399,11 +399,13 @@ class NRCDataset:
         if processor is None:
             processor = self._default_processor
 
-        fns = self.metadata.fetch(tag_combinations)
-        fls = [self.metadata.nrm["files"][fn][0] for fn in fns]
+        fns, fls = self.metadata.fetch(tag_combinations)
+        uni = np.unique(fls)
         fps = [opj(self.path, cln, fn + ".npy") for cln, fn in zip(fls, fns)]
-        ils = [self.metadata.nrm["classes"].index(cln) for cln in fls]
-        n_classes = len(np.unique(ils))
+        ils = [np.where(uni == l) for l in fls]
+        n_classes = len(uni)
+        if n_classes == 1:
+            raise ValueError("Cannot connect to only a single class")
         if enforce_binary:
             if n_classes != 2:
                 raise ValueError("Binary label cannot be enforced, classes > 2")

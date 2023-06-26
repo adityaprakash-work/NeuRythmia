@@ -124,6 +124,7 @@ class NRCM:
         self, tag_combinations: Union[str, Iterable[str], Iterable[Iterable[str]]]
     ):
         file_names = []
+        file_label = []
         if isinstance(tag_combinations, str):
             tag_combinations = [[tag_combinations]]
         elif isinstance(tag_combinations, Iterable) and all(
@@ -143,7 +144,11 @@ class NRCM:
             for file_name in self.nrm["files"]:
                 if all([tag in self.nrm["files"][file_name] for tag in tc]):
                     file_names.append(file_name)
-        return set(file_names)
+                    file_label.append(self.nrm["files"][file_name][0])
+
+        fns = set(file_names)
+        fls = [file_label[file_names.index(fn)] for fn in fns]
+        return fns, fls
 
     def info(self):
         print("NR >> NRCM Info: ")
