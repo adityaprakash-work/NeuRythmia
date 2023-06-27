@@ -397,8 +397,11 @@ class NRCDataset:
         else:
             raise ValueError(f"File {file_name} does not exist")
 
-    def register(self, file_type, ext="npy"):
+    def register(self, file_type, ext="npy", data_shape=None):
         dsr = False
+        if data_shape is not None:
+            self.metadata.nrm["data_shape"] = data_shape
+            dsr = True
         if self._de == True:
             if self._me == False:
                 ld = os.listdir(self.path)
