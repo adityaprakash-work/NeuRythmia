@@ -176,11 +176,11 @@ class Processor:
             fp = self.file_paths[self.index]
             fl = self.file_labels[self.index]
             data = self.load(fp)
-            data = self.transform(data)
+            data, fl = self.transform(data, fl)
             return data, fl
         else:
             data, fl = next(self.processor)
-            data = self.transform(data)
+            data, fl = self.transform(data, fl)
             return data, fl
 
     # For stateful processors
@@ -258,12 +258,10 @@ class TimeSlice(Processor):
     def __call__(self, processor):
         self.processor = processor
         self.len = len(processor)
-        try:
-            if self.sr is None:
-                self.sr = processor.sr
-        except:
-            if self.sr is None:
-                self.sr = 1
+        if processor.sr is not None or processor.sr != 1:
+            self.sr = processor.sr
+        else:
+            self.sr = 1
 
 
 class ChannelSelector(Processor):
@@ -286,7 +284,7 @@ class ChannelSelector(Processor):
 
     def transform(self, data, label):
         data = data[..., self.channels]
-        return data
+        return data, label
 
 
 class CohenTftbP(Processor):
