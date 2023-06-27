@@ -104,3 +104,67 @@ def window_aggregate(arr, ax0idxs, ax1idxs):
 
 
 # ---PROCESSORS-----------------------------------------------------------------
+class Processor:
+    """
+    Processor is a generator that encapsulates preprocessing transformations
+    to aid in lazy-loading of a dataset. It is primarily meant to be used in
+    conjunction with the NRCDataset class. The Processor class is meant to be
+    inherited from and the child class must implement the transform() and load()
+    methods.
+
+    Processors can be chained together to form a preprocessing pipeline. While
+    initializing a Processor, the first parameter can be another processor. The
+    root of the chain mus be provided with the file_paths and file_labels.
+
+    Parameters
+    ----------
+    processor : Processor
+        Processor to be used as a generator. If None, the file_paths and
+        file_labels parameters must be provided
+    file_paths : list[str]
+        List of paths to the files to be loaded
+    file_labels : list[str]
+        List of labels corresponding to the files to be loaded
+
+    Returns
+    -------
+    processor : Processor
+        Instance of the Processor class
+    """
+
+    def __init__(self, processor=None, file_paths=None, file_labels=None):
+        self.processor = processor
+        self.file_paths = file_paths
+        self.file_labels = file_labels
+        if self.processor is None:
+            self.len = len(file_paths)
+        else:
+            self.len = len(self.processor)
+        self.index = 0
+
+    def __len__(self):
+        return self.len
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index >= self.len:
+            raise StopIteration
+        if self.processor is None:
+            fp = self.file_paths[self.index]
+            fl = self.file_labels[self.index]
+            data = self.load(fp)
+            data = self.transform(data)
+            return data, fl
+        else:
+            data, fl = next(self.processor)
+            data = self.transform(data)
+            return data, fl
+
+    # Following two methods have to be implemented by the child class
+    def transform(self, data, label):
+        raise NotImplementedError
+
+    def load(self, file_path):
+        raise NotImplementedError

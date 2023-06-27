@@ -22,6 +22,7 @@ import tftb
 import tensorflow as tf
 
 from . import utils
+from . import transformations as tfm
 
 
 # ---LOAD BASES-----------------------------------------------------------------
@@ -318,22 +319,24 @@ class NRCDataset:
 
     def processed_write(
         self,
-        nrcd_path=None,
-        nrcd_tag_combinations=None,
+        dpath=None,
+        dtag_combinations=None,
         file_paths=None,
         alt_names=None,
         class_labels=None,
-        processor=None,
+        processor_chain=None,
     ):
-        if nrcd_path is not None:
-            base_dir, dataset_name = os.path.split(nrcd_path)
+        if dpath is not None:
+            base_dir, dataset_name = os.path.split(dpath)
             nrcd = NRCDataset(base_dir, dataset_name)
+            if dtag_combinations is None:
+                dtag_combinations = [[c] for c in nrcd.metadata.nrm["classes"]]
             nrcd.connect(
-                tag_combinations=nrcd_tag_combinations,
+                tag_combinations=dtag_combinations,
                 shuffle=False,
-                processor=processor,
+                processor_chain=processor_chain,
             )
-            fns, fls = nrcd.metadata.fetch(nrcd_tag_combinations)
+            fns, fls = nrcd.metadata.fetch(dtag_combinations)
             if alt_names is not None:
                 fns = alt_names
 
@@ -348,9 +351,9 @@ class NRCDataset:
 
         else:
             print(f"NR > Processing files to {self.dataset_name}")
-            if processor is None:
-                processor = self._default_processor
-            gen = processor(file_paths, class_labels)
+            if processor_chain is None:
+                processor_chain = [self._default_processor]
+            gen = self._chain_procs(processor_chain, file_paths, class_labels)
             count = 0
             pb = tqdm(total=len(file_paths))
             for data, fl in gen:
@@ -424,12 +427,18 @@ class NRCDataset:
         for path, label in zip(paths, labels):
             yield np.load(path), label
 
+    def _chain_procs(self, processor_chain, paths, labels):
+        root = processor_chain[0](paths, labels)
+        for processor in processor_chain[1:]:
+            root = processor(root)
+        return root
+
     def connect(
         self,
         tag_combinations=None,
         batch_size=None,
         shuffle=True,
-        processor=None,
+        processor_chain=None,
         categorical=True,
         enforce_binary=False,
     ):
@@ -440,8 +449,8 @@ class NRCDataset:
         self.D = None  # Dataset set to None
         if tag_combinations is None:
             tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
-        if processor is None:
-            processor = self._default_processor
+        if processor_chain is None:
+            processor_chain = [self._default_processor]
 
         fns, fls = self.metadata.fetch(tag_combinations)
         uni = np.unique(fls)
@@ -460,8 +469,10 @@ class NRCDataset:
                 ils = tf.keras.utils.to_categorical(ils, num_classes=n_classes)
             else:
                 ils = np.array(ils)
+
+        processor = self._chain_procs(processor_chain, fps, ils)
         self.D = tf.data.Dataset.from_generator(
-            lambda: processor(fps, ils), (tf.float32, tf.float32)
+            lambda: processor, (tf.float32, tf.float32)
         )
         if shuffle:
             self.D.shuffle(len(fps))
