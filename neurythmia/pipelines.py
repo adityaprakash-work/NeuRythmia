@@ -398,10 +398,7 @@ class NRCDataset:
             raise ValueError(f"File {file_name} does not exist")
 
     def register(self, file_type, ext="npy", data_shape=None):
-        dsr = False
-        if data_shape is not None:
-            self.metadata.nrm["data_shape"] = data_shape
-            dsr = True
+        dsr = True if data_shape is not None else False
         if self._de == True:
             if self._me == False:
                 ld = os.listdir(self.path)
@@ -410,6 +407,7 @@ class NRCDataset:
                     dataset_name=self.dataset_name,
                     classes=classes,
                     file_type=file_type,
+                    data_shape=data_shape,
                 )
                 for fp in tqdm(glob.glob(opj(self.path, "**", f"*.{ext}"))):
                     if dsr == False:
