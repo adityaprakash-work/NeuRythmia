@@ -325,6 +325,7 @@ class NRCDataset:
         alt_names=None,
         class_labels=None,
         processor_chain=None,
+        extn="npy",
     ):
         if dpath is not None:
             base_dir, dataset_name = os.path.split(dpath)
@@ -335,6 +336,7 @@ class NRCDataset:
                 tag_combinations=dtag_combinations,
                 shuffle=False,
                 processor_chain=processor_chain,
+                extn=extn,
             )
             fns, fls = nrcd.metadata.fetch(dtag_combinations)
             if alt_names is not None:
@@ -441,20 +443,16 @@ class NRCDataset:
         processor_chain=None,
         categorical=True,
         enforce_binary=False,
+        extn="npy",
     ):
         if self._de == False:
             raise ValueError("connect(): called on non-existent dataset")
         if self._me == False:
             raise ValueError("connect(): called without nrcm.json")
-        self.D = None  # Dataset set to None
-        if tag_combinations is None:
-            tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
-        if processor_chain is None:
-            processor_chain = [self._default_processor]
 
         fns, fls = self.metadata.fetch(tag_combinations)
         uni = np.unique(fls)
-        fps = [opj(self.path, cln, fn + ".npy") for cln, fn in zip(fls, fns)]
+        fps = [opj(self.path, cl, fn + f".{extn}") for cl, fn in zip(fls, fns)]
         ils = [np.where(uni == l)[0] for l in fls]
         n_classes = len(uni)
         if n_classes == 1:
@@ -470,9 +468,14 @@ class NRCDataset:
             else:
                 ils = np.array(ils)
 
-        processor = self._chain_procs(processor_chain, fps, ils)
+        self.D = None  # Dataset set to None
+        if tag_combinations is None:
+            tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
+        if processor_chain is None:
+            processor_chain = [self._default_processor]
+        cprocessor = self._chain_procs(processor_chain, fps, ils)
         self.D = tf.data.Dataset.from_generator(
-            lambda: processor, (tf.float32, tf.float32)
+            lambda: cprocessor, (tf.float32, tf.float32)
         )
         if shuffle:
             self.D.shuffle(len(fps))
