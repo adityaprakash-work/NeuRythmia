@@ -8,7 +8,6 @@
 # ---DEPENDENCIES---------------------------------------------------------------
 import tftb.processing.cohen as tpc
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 # ---SPECTROGRAM----------------------------------------------------------------

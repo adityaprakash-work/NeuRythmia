@@ -1,13 +1,9 @@
 # ---INFO-----------------------------------------------------------------------
 # Author(s):       Aditya Prakash
-# Last Modified:   2023-06-22
+# Last Modified:   2023-06-27
 
 # --Needed functionalities
-# 1. Integration with tf.data.Dataset
-# 2. Integration of loaders with NRM.json
-# 3. Refinement of NRMD.json and writers
-# 4. Constructing a NeuRythmia Dataset class with integrated features
-# 5. Deprecating separate loaders and writers
+# 1. More intuitive alternative of tag_combinations in NRCDataset required.
 
 
 # ---DEPENDENCIES---------------------------------------------------------------
@@ -320,6 +316,53 @@ class NRCDataset:
                 )
         self.metadata.add(name=file_name, tag=tag)
 
+    def processed_write(
+        self,
+        nrcd_path=None,
+        nrcd_tag_combinations=None,
+        file_paths=None,
+        alt_names=None,
+        class_labels=None,
+        processor=None,
+    ):
+        if nrcd_path is not None:
+            base_dir, dataset_name = os.path.split(nrcd_path)
+            nrcd = NRCDataset(base_dir, dataset_name)
+            nrcd.connect(
+                tag_combinations=nrcd_tag_combinations,
+                shuffle=False,
+                processor=processor,
+            )
+            fns, fls = nrcd.metadata.fetch(nrcd_tag_combinations)
+            if alt_names is not None:
+                fns = alt_names
+
+            print(f"NR > Processing {nrcd.dataset_name} to {self.dataset_name}")
+            count = 0
+            pb = tqdm(total=len(fns))
+            for e, _ in nrcd.D:
+                self.write(fns[count], fls[count], e)
+                count += 1
+                pb.update(1)
+            pb.close()
+
+        else:
+            print(f"NR > Processing files to {self.dataset_name}")
+            if processor is None:
+                processor = self._default_processor
+            gen = processor(file_paths, class_labels)
+            count = 0
+            pb = tqdm(total=len(file_paths))
+            for data, fl in gen:
+                if alt_names is not None:
+                    fn = alt_names[count]
+                else:
+                    fn = os.path.basename(file_paths[count]).split(".")[0]
+                self.write(fn, fl, data)
+                count += 1
+                pb.update(1)
+            pb.close()
+
     def erase(self, file_name, tag=None, total_erase=False):
         if self._me == False:
             raise ValueError("erase(): called on ambiguous dataset")
@@ -384,7 +427,8 @@ class NRCDataset:
     def connect(
         self,
         tag_combinations=None,
-        batch_size=8,
+        batch_size=None,
+        shuffle=True,
         processor=None,
         categorical=True,
         enforce_binary=False,
@@ -402,7 +446,7 @@ class NRCDataset:
         fns, fls = self.metadata.fetch(tag_combinations)
         uni = np.unique(fls)
         fps = [opj(self.path, cln, fn + ".npy") for cln, fn in zip(fls, fns)]
-        ils = [np.where(uni == l) for l in fls]
+        ils = [np.where(uni == l)[0] for l in fls]
         n_classes = len(uni)
         if n_classes == 1:
             raise ValueError("Cannot connect to only a single class")
@@ -419,6 +463,9 @@ class NRCDataset:
         self.D = tf.data.Dataset.from_generator(
             lambda: processor(fps, ils), (tf.float32, tf.float32)
         )
-        self.D.shuffle(len(fps))
-        self.D = self.D.batch(batch_size=batch_size)
+        if shuffle:
+            self.D.shuffle(len(fps))
+        if batch_size is not None:
+            self.D = self.D.batch(batch_size=batch_size)
+        self.D = self.D.prefetch(tf.data.AUTOTUNE)
         print(f"NR > Connected to dataset {self.dataset_name}")
