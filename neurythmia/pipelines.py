@@ -431,7 +431,7 @@ class NRCDataset:
             yield np.load(path), label
 
     def _chain_procs(self, processor_chain, paths, labels):
-        root = processor_chain[0](paths, labels)
+        root = processor_chain[0](file_paths=paths, file_labels=labels)
         for processor in processor_chain[1:]:
             root = processor(root)
         return root

@@ -8,6 +8,7 @@
 # ---DEPENDENCIES---------------------------------------------------------------
 import tftb.processing.cohen as tpc
 import numpy as np
+import mne
 
 
 # ---SPECTROGRAM----------------------------------------------------------------
@@ -55,8 +56,11 @@ class CohenTftb:
             self.name = name
         self.spec_method = self.SUPPORTED_COHEN_TFR[self.name]
         self.sampling_rate = sampling_rate
-        self.time_stamps = None
         self.kwargs = kwargs
+        try:
+            self.time_stamps = self.kwargs["time_stamps"]
+        except:
+            self.time_stamps = None
 
     def __call__(self, signal):
         if self.time_stamps is None:
@@ -116,6 +120,20 @@ class Processor:
     initializing a Processor, the first parameter can be another processor. The
     root of the chain mus be provided with the file_paths and file_labels.
 
+    Stateful processor must be separately instantiated and only then placed in a
+    processor chain as an object, and strictly not as a class definition pointer
+    . Such processors must implement a __call__ method on a singular parameter
+    called processor, which executes atleast the following code:
+
+        def __call__(self, processor):
+            self.processor = processor
+            self.len = len(processor)
+
+    The __call__ method is accessed with the same code as a new instiation i.e
+    X(), where X is either an object or a class definition. The trick is that
+    the first position is for a processor which makes the cosntructor need no
+    further arguments.
+
     Parameters
     ----------
     processor : Processor
@@ -136,10 +154,13 @@ class Processor:
         self.processor = processor
         self.file_paths = file_paths
         self.file_labels = file_labels
-        if self.processor is None:
-            self.len = len(file_paths)
-        else:
-            self.len = len(self.processor)
+        try:
+            if self.processor is None:
+                self.len = len(file_paths)
+            else:
+                self.len = len(self.processor)
+        except:
+            self.len = None
         self.index = 0
 
     def __len__(self):
@@ -162,9 +183,150 @@ class Processor:
             data = self.transform(data)
             return data, fl
 
+    # For stateful processors
+    def __call__(self, processor):
+        self.processor = processor
+        self.len = len(processor)
+
     # Following two methods have to be implemented by the child class
     def transform(self, data, label):
         raise NotImplementedError
 
     def load(self, file_path):
         raise NotImplementedError
+
+
+class LoadFif(Processor):
+    """
+    Processor to load fif files using mne.io.read_raw_fif()
+
+    Parameters
+    ----------
+    file_paths : list[str]
+        List of paths to the files to be loaded
+    file_labels : list[str]
+        List of labels corresponding to the files to be loaded
+
+    Returns
+    -------
+    processor : Processor
+        Instance of the Processor class
+    """
+
+    # Defining a new __init__ for sr and making parameters compulsory
+    def __init__(self, file_paths, file_labels):
+        super().__init__(file_paths=file_paths, file_labels=file_labels)
+        self.sr = int(self.load(file_paths[0]).info["sfreq"])
+
+    def load(self, file_path):
+        return mne.io.read_raw_fif(file_path, verbose="ERROR")
+
+    def transform(self, data, label):
+        data, _ = data[:, :]
+        data = data.T
+        return data, label
+
+
+class TimeSlice(Processor):
+    """
+    Processor to slice the data along the time axis using the start and end time
+    in seconds if inner processor has a parameter called 'sr' too, otherwise
+    'sr' parameter is set to 1 and start and end times have to gives as indices.
+
+    Parameters
+    ----------
+    start : int
+        Start index of the slice
+    end : int
+        End index of the slice
+
+    Returns
+    -------
+    processor : Processor
+        Instance of the Processor class
+    """
+
+    def __init__(self, start, end, sr=None):
+        self.start = start
+        self.end = end
+        self.sr = sr
+
+    def transform(self, data, label):
+        data = data[self.start * self.sr : self.end * self.sr, ...]
+        return data, label
+
+    def __call__(self, processor):
+        self.processor = processor
+        self.len = len(processor)
+        try:
+            if self.sr is None:
+                self.sr = processor.sr
+        except:
+            if self.sr is None:
+                self.sr = 1
+
+
+class ChannelSelector(Processor):
+    """
+    Processor to select a subset of channels from the data
+
+    Parameters
+    ----------
+    channels : list[int]
+        List of indices of the channels to be selected
+
+    Returns
+    -------
+    processor : Processor
+        Instance of the Processor class
+    """
+
+    def __init__(self, channels):
+        self.channels = channels
+
+    def transform(self, data, label):
+        data = data[..., self.channels]
+        return data
+
+
+class CohenTftbP(Processor):
+    """
+    Processor to compute the time-frequency representation of the data using
+    tftb.processing.cohen.<tfr>
+
+    Parameters
+    ----------
+    name : str
+        Name of the tfr method to use. Must be one of
+        ["Spectrogram", "PageRepresentation", "PseudoPageRepresentation",
+        "MargenauHillDistribution", "PseudoMargenauHillDistribution",
+        "WignerVilleDistribution", "PseudoWignerVilleDistribution"]
+    sampling_rate : int
+        Sampling frequency of the signal in Hz
+    **kwargs : dict
+        Keyword arguments to be passed to the tfr method
+
+    Returns
+    -------
+    processor : Processor
+        Instance of the Processor class
+    """
+
+    def __init__(self, name, sampling_rate=None, **kwargs):
+        self.name = name
+        self.sr = sampling_rate
+        self.kwa = kwargs
+        self.coh = CohenTftb(name=self.name, sampling_rate=self.sr, **self.kwa)
+
+    def transform(self, data, label):
+        data = self.coh(data)
+        return data, label
+
+    def __call__(self, processor):
+        self.processor = processor
+        self.len = len(processor)
+        if self.sr is None:
+            if processor.sr is not None or processor.sr != 1:
+                self.sr = processor.sr
+            else:
+                raise ValueError("Invalid sampling rate, None and 1 reserved")
