@@ -128,6 +128,7 @@ class Processor:
         def __call__(self, processor):
             self.processor = processor
             self.len = len(processor)
+            return self
 
     The __call__ method is accessed with the same code as a new instiation i.e
     X(), where X is either an object or a class definition. The trick is that
@@ -177,16 +178,19 @@ class Processor:
             fl = self.file_labels[self.index]
             data = self.load(fp)
             data, fl = self.transform(data, fl)
+            self.index += 1
             return data, fl
         else:
             data, fl = next(self.processor)
             data, fl = self.transform(data, fl)
+            self.index += 1
             return data, fl
 
     # For stateful processors
     def __call__(self, processor):
         self.processor = processor
         self.len = len(processor)
+        return self
 
     # Following two methods have to be implemented by the child class
     def transform(self, data, label):
@@ -247,6 +251,7 @@ class TimeSlice(Processor):
     """
 
     def __init__(self, start, end, sr=None):
+        super().__init__()
         self.start = start
         self.end = end
         self.sr = sr
@@ -258,10 +263,12 @@ class TimeSlice(Processor):
     def __call__(self, processor):
         self.processor = processor
         self.len = len(processor)
-        if processor.sr is not None or processor.sr != 1:
-            self.sr = processor.sr
-        else:
-            self.sr = 1
+        if self.sr is None:
+            if processor.sr is not None or processor.sr != 1:
+                self.sr = processor.sr
+            else:
+                self.sr = 1
+        return self
 
 
 class ChannelSelector(Processor):
@@ -280,6 +287,7 @@ class ChannelSelector(Processor):
     """
 
     def __init__(self, channels):
+        super().__init__()
         self.channels = channels
 
     def transform(self, data, label):
@@ -311,6 +319,7 @@ class CohenTftbP(Processor):
     """
 
     def __init__(self, name, sampling_rate=None, **kwargs):
+        super().__init__()
         self.name = name
         self.sr = sampling_rate
         self.kwa = kwargs
@@ -328,3 +337,4 @@ class CohenTftbP(Processor):
                 self.sr = processor.sr
             else:
                 raise ValueError("Invalid sampling rate, None and 1 reserved")
+        return self
