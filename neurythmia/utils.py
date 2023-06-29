@@ -1,6 +1,6 @@
 # ---INFO-----------------------------------------------------------------------
 # Author(s):       Aditya Prakash
-# Last Modified:   2023-06-26
+# Last Modified:   2023-06-29
 
 # --Needed functionalities
 
@@ -12,6 +12,7 @@
 
 # ---DEPENDENCIES---------------------------------------------------------------
 from typing import Iterable
+import os
 
 import json
 import numpy as np
@@ -79,6 +80,7 @@ class NRCM:
     def __init__(
         self,
         file_type=None,
+        file_ext=None,
         dataset_name=None,
         classes=None,
         data_shape=None,
@@ -95,6 +97,7 @@ class NRCM:
             self.nrm["size"] = {f"{cl}": 0 for cl in classes}
             self.nrm["data_shape"] = data_shape
             self.nrm["files"] = {}
+            self.nrm["file_ext"] = file_ext
 
     def load(self, path):
         with open(path, "r") as f:
@@ -139,7 +142,7 @@ class NRCM:
         return fns, fls
 
     def info(self):
-        print("NR >> NRCM Info: ")
+        print(f"NR {self.nrm['dataset_name']} > NRCM Info:")
         for key in self.nrm:
             if key != "files":
                 print(f"{key}: {self.nrm[key]}")

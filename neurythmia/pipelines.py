@@ -1,6 +1,6 @@
 # ---INFO-----------------------------------------------------------------------
 # Author(s):       Aditya Prakash
-# Last Modified:   2023-06-27
+# Last Modified:   2023-06-29
 
 # --Needed functionalities
 # 1. More intuitive alternative of tag_combinations in NRCDataset required.
@@ -270,6 +270,7 @@ class NRCDataset:
             print("NR > No dataset found, create new")
 
         self.D = None  # td.data.Dataset
+        self._default_process = tfm.Default
 
     def create(self, classes=None, file_type=None, data_shape=None):
         if self._cc == True:
@@ -288,7 +289,7 @@ class NRCDataset:
         else:
             raise ValueError("create(): called on an existing dataset")
 
-    def write(self, file_name, tag, data=None):
+    def write(self, file_name, tag, data=None, bulk=False):
         if self._me == False:
             raise ValueError("write(): called on ambiguous dataset")
         if file_name in self.metadata.nrm["files"]:
@@ -316,6 +317,8 @@ class NRCDataset:
                     f"First tag should be one of {self.metadata.nrm['classes']}"
                 )
         self.metadata.add(name=file_name, tag=tag)
+        if bulk == False:
+            self.metadata.save(opj(self.path, "nrcm.json"))
 
     def processed_write(
         self,
@@ -324,51 +327,49 @@ class NRCDataset:
         file_paths=None,
         alt_names=None,
         class_labels=None,
-        processor_chain=None,
-        extn="npy",
+        process_chain=None,
     ):
+        if process_chain is None:
+            process_chain = [self._default_processor]
         if dpath is not None:
             base_dir, dataset_name = os.path.split(dpath)
             nrcd = NRCDataset(base_dir, dataset_name)
+            extn = nrcd.metadata.nrm["file_ext"]
+
             if dtag_combinations is None:
                 dtag_combinations = [[c] for c in nrcd.metadata.nrm["classes"]]
-            nrcd.connect(
-                tag_combinations=dtag_combinations,
-                shuffle=False,
-                processor_chain=processor_chain,
-                extn=extn,
-            )
             fns, fls = nrcd.metadata.fetch(dtag_combinations)
+            fps = [opj(nrcd.path, c, f"{fn}.{extn}") for c, fn in zip(fls, fns)]
             if alt_names is not None:
+                assert len(alt_names) == len(fns)
                 fns = alt_names
+            fml = list(zip(fns, fls))
 
             print(f"NR > Processing {nrcd.dataset_name} to {self.dataset_name}")
-            count = 0
-            pb = tqdm(total=len(fns))
-            for e, _ in nrcd.D:
-                self.write(fns[count], fls[count], e)
-                count += 1
+            pb = tqdm(total=len(fns), desc="source processed")
+            cp = self._chain_processes(process_chain, fps, fml)
+            for data, label in cp:
+                self.write(label[0], label[1], data, bulk=True)
                 pb.update(1)
             pb.close()
 
         else:
+            fns = [os.path.basename(fp).split(".")[0] for fp in file_paths]
+            if alt_names is not None:
+                assert len(alt_names) == len(fns)
+                fns = alt_names
+            fml = list(zip(fns, class_labels))
+
             print(f"NR > Processing files to {self.dataset_name}")
-            if processor_chain is None:
-                processor_chain = [self._default_processor]
-            gen = self._chain_procs(processor_chain, file_paths, class_labels)
-            count = 0
-            pb = tqdm(total=len(file_paths))
-            for data, fl in gen:
-                if alt_names is not None:
-                    fn = alt_names[count]
-                else:
-                    fn = os.path.basename(file_paths[count]).split(".")[0]
-                self.write(fn, fl, data)
-                count += 1
+            pb = tqdm(total=len(fns), desc="source processed")
+            cp = self._chain_processes(process_chain, file_paths, fml)
+            for data, label in cp:
+                self.write(label[0], label[1], data, bulk=True)
                 pb.update(1)
             pb.close()
+        self.metadata.save(opj(self.path, "nrcm.json"))
 
-    def erase(self, file_name, tag=None, total_erase=False):
+    def erase(self, file_name, tag=None, total_erase=False, bulk=False):
         if self._me == False:
             raise ValueError("erase(): called on ambiguous dataset")
         if file_name in self.metadata.nrm["files"]:
@@ -396,6 +397,8 @@ class NRCDataset:
                     )
         else:
             raise ValueError(f"File {file_name} does not exist")
+        if bulk == False:
+            self.metadata.save(opj(self.path, "nrcm.json"))
 
     def register(self, file_type, ext="npy", data_shape=None):
         dsr = True if data_shape is not None else False
@@ -407,6 +410,7 @@ class NRCDataset:
                     dataset_name=self.dataset_name,
                     classes=classes,
                     file_type=file_type,
+                    file_ext=ext,
                     data_shape=data_shape,
                 )
                 for fp in tqdm(glob.glob(opj(self.path, "**", f"*.{ext}"))):
@@ -426,22 +430,18 @@ class NRCDataset:
         else:
             raise ValueError("register(): called on non-existent dataset")
 
-    def _default_processor(self, paths, labels):
-        for path, label in zip(paths, labels):
-            yield np.load(path), label
-
-    def _chain_procs(self, processor_chain, paths, labels):
-        root = processor_chain[0](file_paths=paths, file_labels=labels)
-        for processor in processor_chain[1:]:
-            root = processor(root)
-        return root
+    def _chain_processes(self, process_chain, paths, labels):
+        cp = process_chain[0](paths=paths, labels=labels)
+        for processor in process_chain[1:]:
+            cp = processor(cp)
+        return cp
 
     def connect(
         self,
         tag_combinations=None,
         batch_size=None,
         shuffle=True,
-        processor_chain=None,
+        process_chain=None,
         categorical=True,
         enforce_binary=False,
         extn="npy",
@@ -472,9 +472,9 @@ class NRCDataset:
         self.D = None  # Dataset set to None
         if tag_combinations is None:
             tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
-        if processor_chain is None:
-            processor_chain = [self._default_processor]
-        cprocessor = self._chain_procs(processor_chain, fps, ils)
+        if process_chain is None:
+            process_chain = [self._default_processor]
+        cprocessor = self._chain_processes(process_chain, fps, ils)
         self.D = tf.data.Dataset.from_generator(
             lambda: cprocessor, (tf.float32, tf.float32)
         )
