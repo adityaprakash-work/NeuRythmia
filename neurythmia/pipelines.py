@@ -216,6 +216,95 @@ class EEGSpectrogram(LoadBase1):
 
 # ---NRDataset------------------------------------------------------------------
 class NRCDataset:
+    """
+    Class to interact with a dataset. The dataset is stored in a directory with
+    the following structure:
+    <dataset_name>
+    ├── <nrcm.json>
+    ├── <class_name_1>
+    │   ├── <file_name_1>.<file_type>
+    │   ├── <file_name_2>.<file_type>
+    │   └── ...
+    ├── <class_name_2>
+    │   ├── <file_name_1>.<file_type>
+    │   ├── <file_name_2>.<file_type>
+    │   └── ...
+    └── ...
+
+    Parameters
+    ----------
+    base_dir : str
+        Path to the directory containing the dataset
+    dataset_name : str
+        Name of the dataset
+
+    Returns
+    -------
+    nrcd : NRCDataset
+        Instance of the NRCDataset class
+
+    Methods
+    -------
+    create
+        Creates a new dataset
+    write
+        Writes data to the dataset
+    erase
+        Erases data from the dataset
+    register
+        Registers the dataset
+    connect
+        Connects to the dataset and returns a tf.data.Dataset object
+    processed_write
+        Writes processed data to the dataset sourced from another NRCDataset or
+        explicit file paths and file labels.
+
+    Usage
+    -----
+    For creating a new dataset:
+    >>> import neurythmia as nr
+    >>> nrcd = nr.NRCDataset(base_dir, dataset_name)
+    >>> nrcd.create(classes, file_type, ext, data_shape)
+
+    For writing data to the dataset:
+    1. Sparse writing
+    >>> nrcd.write(file_name, tag, data, bulk=False)
+    2. Bulk writing, followed by manual saving
+    >>> nrcd.write(file_name, tag, data, bulk=True)
+    >>> nrcd.metadata.save(opj(nrcd.path, "nrcm.json"))
+
+    For erasing data from the dataset:
+    1. Sparse erasing
+    >>> nrcd.erase(file_name, tag, total_erase=False, bulk=False)
+    2. Bulk erasing, followed by manual saving
+    >>> nrcd.erase(file_name, tag, total_erase=False, bulk=True)
+    >>> nrcd.metadata.save(opj(nrcd.path, "nrcm.json"))
+
+    For registering the dataset:
+    >>> nrcd.register(file_type, ext, data_shape)
+
+    For connecting to the dataset:
+    >>> nrcd.connect(
+            tag_combinations,
+            batch_size,
+            shuffle,
+            process_chain,
+            categorical,
+            enforce_binary,
+            extn
+        )
+
+    For processing and writing data to the dataset:
+    >>> nrcd.processed_write(
+            dpath,
+            dtag_combinations,
+            file_paths,
+            alt_names,
+            class_labels,
+            process_chain
+        )
+    """
+
     def __init__(self, base_dir, dataset_name):
         self.base_dir = base_dir
         self.dataset_name = dataset_name
@@ -241,7 +330,25 @@ class NRCDataset:
         self.D = None  # td.data.Dataset
         self._default_process = tfm.Default
 
-    def create(self, classes=None, file_type=None, data_shape=None):
+    def create(self, classes=None, file_type=None, ext="npy", data_shape=None):
+        """
+        Creates a new dataset
+
+        Parameters
+        ----------
+        classes : list of str, optional
+            List of class names. If None, the class names are inferred from the
+            file names. Default is None.
+        file_type : str, optional
+            Type of the files in the dataset. If None, the file type is inferred
+            from the file extension. Default is None.
+        ext : str, optional
+            Extension of the files in the dataset. Default is 'npy'.
+        data_shape : tuple of int, optional
+            Shape of the data in the dataset. If None, the shape is inferred
+            from the first file. Default is None.
+        """
+
         if self._cc == True:
             for cl in classes:
                 os.makedirs(opj(self.base_dir, self.dataset_name, cl))
@@ -249,6 +356,7 @@ class NRCDataset:
                 dataset_name=self.dataset_name,
                 classes=classes,
                 file_type=file_type,
+                file_ext=ext,
                 data_shape=data_shape,
             )
             self.metadata.save(opj(self.path, "nrcm.json"))
@@ -258,7 +366,29 @@ class NRCDataset:
         else:
             raise ValueError("create(): called on an existing dataset")
 
-    def write(self, file_name, tag, data=None, bulk=False):
+    def write(self, file_name, tag, data=None, bulk=False, save_method=np.save):
+        """
+        Writes data to the dataset
+
+        Parameters
+        ----------
+        file_name : str
+            Name of the file to be written
+        tag : str
+            Tag of the file to be written
+        data : np.ndarray, optional
+            Data to be written. If None, the file is created with the given
+            name and tag. Default is None.
+        bulk : bool, optional
+            Whether to save the metadata after writing. Default is False.
+        save_method : function, optional
+            Method to be used for saving the data. Default is np.save.
+            The method given should take two arguments: file path and data.
+            A custom wrapper is recommended for methods that are of different
+            format, which can then be used by passing the wrapper as the
+            save_method argument.
+        """
+
         if self._me == False:
             raise ValueError("write(): called on ambiguous dataset")
         if file_name in self.metadata.nrm["files"]:
@@ -268,7 +398,7 @@ class NRCDataset:
         else:
             if tag in self.metadata.nrm["classes"]:
                 if data is not None:
-                    np.save(
+                    save_method(
                         opj(
                             self.base_dir,
                             self.dataset_name,
@@ -298,6 +428,32 @@ class NRCDataset:
         class_labels=None,
         process_chain=None,
     ):
+        """
+        Writes processed data to the dataset sourced from another NRCDataset or
+        explicit file paths and file labels.
+
+        Parameters
+        ----------
+        dpath : str, optional
+            Path to the NRCDataset to be processed. If None, file_paths and
+            class_labels must be specified. Default is None.
+        dtag_combinations : list of list of str, optional
+            List of list of tags to be combined to fetch files. If
+            None, all classes are considered as separate tags. Default is None.
+        file_paths : list of str, optional
+            List of paths to the files to be processed. If None, dpath must be
+            specified. Default is None.
+        alt_names : list of str, optional
+            List of alternative names for the files. If None, the original
+            names are used. Default is None.
+        class_labels : list of str, optional
+            List of class labels for the files. If None, dpath must be
+            specified. Default is None.
+        process_chain : list of Processes, optional
+            List of Process objects to be applied to the dataset. If None, no
+            processing is done. Default is None.
+        """
+
         if process_chain is None:
             process_chain = [self._default_processor]
         if dpath is not None:
@@ -339,6 +495,23 @@ class NRCDataset:
         self.metadata.save(opj(self.path, "nrcm.json"))
 
     def erase(self, file_name, tag=None, total_erase=False, bulk=False):
+        """
+        Erases data from the dataset
+
+        Parameters
+        ----------
+        file_name : str
+            Name of the file to be erased
+        tag : str, optional
+            Tag of the file to be erased. If None and total_erase is True, the
+            file is completely removed from the dataset.
+        total_erase : bool, optional
+            Whether to completely remove the file from the dataset. Default is
+            False.
+        bulk : bool, optional
+            Whether to save the metadata after erasing. Default is False.
+        """
+
         if self._me == False:
             raise ValueError("erase(): called on ambiguous dataset")
         if file_name in self.metadata.nrm["files"]:
@@ -370,6 +543,19 @@ class NRCDataset:
             self.metadata.save(opj(self.path, "nrcm.json"))
 
     def register(self, file_type, ext="npy", data_shape=None):
+        """
+        Registers the dataset. This method should be called on a new dataset.
+
+        Parameters
+        ----------
+        file_type : str
+            Type of the files in the dataset
+        ext : str, optional
+            Extension of the files in the dataset. Default is 'npy'.
+        data_shape : tuple of int, optional
+            Shape of the data in the dataset. If None, the shape is inferred
+            from the first file. Default is None.
+        """
         dsr = True if data_shape is not None else False
         if self._de == True:
             if self._me == False:
@@ -413,13 +599,44 @@ class NRCDataset:
         process_chain=None,
         categorical=True,
         enforce_binary=False,
-        extn="npy",
     ):
+        """
+        Connects to the dataset and returns a tf.data.Dataset object
+
+        Parameters
+        ----------
+        tag_combinations : list of list of str, optional
+            List of list of tags to be combined to form a single class. If
+            None, all classes are considered as separate tags. Default is
+            None.
+        batch_size : int, optional
+            Batch size of the dataset. If None, no batching is done. Default
+            is None.
+        shuffle : bool, optional
+            Whether to shuffle the dataset. Default is True.
+        process_chain : list of Processes, optional
+            List of Process objects to be applied to the dataset. If None, no
+            processing is done. Default is None.
+        categorical : bool, optional
+            Whether to convert the labels to one-hot encoded vectors. Default
+            is True.
+        enforce_binary : bool, optional
+            Whether to enforce binary labels. If True, the labels are
+            converted to 0 and 1. If False, the labels are converted to
+            one-hot encoded vectors. Default is False.
+
+        Returns
+        -------
+        D : tf.data.Dataset
+            Dataset object
+        """
+
         if self._de == False:
             raise ValueError("connect(): called on non-existent dataset")
         if self._me == False:
             raise ValueError("connect(): called without nrcm.json")
 
+        extn = self.metadata.nrm["file_ext"]
         fns, fls = self.metadata.fetch(tag_combinations)
         uni = np.unique(fls)
         fps = [opj(self.path, cl, fn + f".{extn}") for cl, fn in zip(fls, fns)]
@@ -453,3 +670,4 @@ class NRCDataset:
             self.D = self.D.batch(batch_size=batch_size)
         self.D = self.D.prefetch(tf.data.AUTOTUNE)
         print(f"NR > Connected to dataset {self.dataset_name}")
+        return self.D
