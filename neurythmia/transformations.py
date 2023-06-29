@@ -290,9 +290,9 @@ class LoadFif(Process):
 
     Parameters
     ----------
-    file_paths : list[str]
+    paths : list[str]
         List of paths to the files to be loaded
-    file_labels : list[str]
+    labels : list[str]
         List of labels corresponding to the files to be loaded
 
     Returns
