@@ -12,13 +12,10 @@ from typing import Any, Iterable, Callable
 from os.path import join as opj
 from os.path import exists as ope
 import glob
-import json
 from tqdm import tqdm
 
 import mne
 import numpy as np
-import scipy as sp
-import tftb
 import tensorflow as tf
 
 from . import utils
