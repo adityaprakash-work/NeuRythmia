@@ -282,3 +282,33 @@ class CohenTftbP(Process):
             else:
                 raise ValueError("Invalid sampling rate, None and 1 reserved")
         return self
+
+
+class LoadFif(Process):
+    """
+    Process to load fif files using mne.io.read_raw_fif()
+
+    Parameters
+    ----------
+    file_paths : list[str]
+        List of paths to the files to be loaded
+    file_labels : list[str]
+        List of labels corresponding to the files to be loaded
+
+    Returns
+    -------
+    process : Process
+        Instance of the Process class
+    """
+
+    def __init__(self, paths, labels):
+        super().__init__(paths=paths, labels=labels)
+        self.sr = int(self.load(paths[0]).info["sfreq"])
+
+    def load(self, path):
+        return mne.io.read_raw_fif(path, verbose="ERROR")
+
+    def transform(self, data, label):
+        data, _ = data[:, :]
+        data = data.T
+        return data, label
