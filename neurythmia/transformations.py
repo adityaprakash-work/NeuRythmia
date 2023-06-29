@@ -3,6 +3,7 @@
 # Last Modified:   2023-06-29
 
 # --Needed functionalities
+# 1. Using tf.data.Dataset.map to apply transformations to the dataset
 
 
 # ---DEPENDENCIES---------------------------------------------------------------
@@ -279,6 +280,7 @@ class CohenTftbP(Process):
         if self.sr is None:
             if inner_process.sr is not None or inner_process.sr != 1:
                 self.sr = inner_process.sr
+                self.coh.sampling_rate = self.sr
             else:
                 raise ValueError("Invalid sampling rate, None and 1 reserved")
         return self
