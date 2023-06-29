@@ -10,6 +10,7 @@
 import tftb.processing.cohen as tpc
 import numpy as np
 import mne
+import tensorflow as tf
 
 
 # ---SPECTROGRAM----------------------------------------------------------------

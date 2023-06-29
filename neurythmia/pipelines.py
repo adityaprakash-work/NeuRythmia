@@ -587,9 +587,17 @@ class NRCDataset:
 
     def _chain_processes(self, process_chain, paths, labels):
         cp = process_chain[0](paths=paths, labels=labels)
-        for processor in process_chain[1:]:
-            cp = processor(cp)
+        for process in process_chain[1:]:
+            cp = process(cp)
         return cp
+
+    def _chain_process_transforms(self, process_chain):
+        def cpt(path, label):
+            data, label = process_chain[0].load(path), label
+            for process in process_chain[1:]:
+                data, label = process.transform(data, label)
+
+        return cpt
 
     def connect(
         self,
@@ -599,6 +607,7 @@ class NRCDataset:
         process_chain=None,
         categorical=True,
         enforce_binary=False,
+        method="from_generator",
     ):
         """
         Connects to the dataset and returns a tf.data.Dataset object
@@ -624,6 +633,12 @@ class NRCDataset:
             Whether to enforce binary labels. If True, the labels are
             converted to 0 and 1. If False, the labels are converted to
             one-hot encoded vectors. Default is False.
+        method : str, optional
+            Method to be used for creating the dataset. If 'from_generator',
+            the dataset is created using tf.data.Dataset.from_generator().
+            If 'map_transforms', the dataset is created using
+            tf.data.Dataset.map(). Default is 'from_generator'.
+
 
         Returns
         -------
@@ -635,6 +650,8 @@ class NRCDataset:
             raise ValueError("connect(): called on non-existent dataset")
         if self._me == False:
             raise ValueError("connect(): called without nrcm.json")
+        if tag_combinations is None:
+            tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
 
         extn = self.metadata.nrm["file_ext"]
         fns, fls = self.metadata.fetch(tag_combinations)
@@ -654,16 +671,31 @@ class NRCDataset:
                 ils = tf.keras.utils.to_categorical(ils, num_classes=n_classes)
             else:
                 ils = np.array(ils)
-
-        self.D = None  # Dataset set to None
-        if tag_combinations is None:
-            tag_combinations = [[cln] for cln in self.metadata.nrm["classes"]]
         if process_chain is None:
             process_chain = [self._default_processor]
-        cprocessor = self._chain_processes(process_chain, fps, ils)
-        self.D = tf.data.Dataset.from_generator(
-            lambda: cprocessor, (tf.float32, tf.float32)
-        )
+
+        self.D = None  # Dataset set to None
+        if method == "from_generator":
+            cprocess = self._chain_processes(process_chain, fps, ils)
+            self.D = tf.data.Dataset.from_generator(
+                lambda: cprocess, (tf.float32, tf.float32)
+            )
+        elif method == "map_transforms":
+            cpt = self._chain_process_transforms(process_chain)
+            self.D = tf.data.Dataset.from_tensor_slices((fps, ils))
+            self.D = self.D.map(
+                lambda path, label: tf.py_function(
+                    cpt, inp=[path, label], Tout=[tf.float32, tf.float32]
+                ),
+                num_parallel_calls=tf.data.AUTOTUNE,
+                deterministic=False,
+            )
+            # To filter out Exceptions in absence of the escaping yield trick
+            # of Processes. This functionality is not removed from Processes
+            # because they are used in writing too, where tf.data.Dataset is
+            # not prepared
+            self.D = self.D.ignore_errors()
+
         if shuffle:
             self.D.shuffle(len(fps))
         if batch_size is not None:
