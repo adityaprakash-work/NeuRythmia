@@ -107,7 +107,7 @@ def window_aggregate(arr, ax0idxs, ax1idxs):
     return warr
 
 
-# ---inner_processS-----------------------------------------------------------------
+# ---PROCESSES------------------------------------------------------------------
 class Process:
     def __init__(self, inner_process=None, paths=None, labels=None):
         self.inner_process = inner_process
