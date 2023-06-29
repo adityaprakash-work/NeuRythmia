@@ -150,6 +150,23 @@ class Process:
         raise NotImplementedError
 
 
+class Default(Process):
+    """
+    Process to return the data and label as it is
+
+    Returns
+    -------
+    process : Process
+        Instance of the Process class
+    """
+
+    def load(self, path):
+        return np.load(path)
+
+    def transform(self, data, label):
+        return data, label
+
+
 class TimeSlice(Process):
     """
     Process to slice the data along the time axis using the start and end time
