@@ -213,33 +213,6 @@ class EEGSpectrogram(LoadBase1):
             x = x.reshape(x.shape[0], -1)
         return x
 
-    def __init__(
-        self,
-        dataset_name,
-        classes,
-        base_dir,
-        register=False,
-        s_time=0,
-        e_time=20,
-    ):
-        super().__init__(
-            dataset_name=dataset_name,
-            classes=classes,
-            file_type="nrraw",
-            base_dir=base_dir,
-            register=register,
-        )
-        self.s_time = s_time
-        self.e_time = e_time
-        self.segment_length = int((self.e_time - self.s_time))
-
-    def _processing(self, f):
-        eegep = mne.io.read_raw_fif(f, verbose="ERROR")
-        sr = int(eegep.info["sfreq"])
-        data, _ = eegep[:, :]
-        segment = data[:, self.s_time * sr : self.e_time * sr].T
-        return segment
-
 
 # ---NRDataset------------------------------------------------------------------
 class NRCDataset:
