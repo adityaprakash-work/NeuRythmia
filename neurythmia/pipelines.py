@@ -695,7 +695,7 @@ class NRCDataset:
             # of Processes. This functionality is not removed from Processes
             # because they are used in writing too, where tf.data.Dataset is
             # not prepared
-            self.D = self.D.ignore_errors()
+            # self.D = self.D.ignore_errors()
 
         if shuffle:
             self.D.shuffle(len(fps))
