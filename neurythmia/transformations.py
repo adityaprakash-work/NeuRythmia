@@ -111,6 +111,46 @@ def window_aggregate(arr, ax0idxs, ax1idxs):
 
 # ---PROCESSES------------------------------------------------------------------
 class Process:
+    """
+    Base class for all the processes
+
+    Parameters
+    ----------
+    inner_process : Process
+        Inner process to be called
+    paths : list[str]
+        List of paths to the files to be loaded
+    labels : list[str]
+        List of labels corresponding to the files to be loaded
+
+    Returns
+    -------
+    process : Process
+        Instance of the Process class
+
+    Notes
+    -----
+    1. While subsclassing the Process class, the subclass must implement the
+       load and transform methods as per requirement.
+    2. The Process class can be used as a decorator to create a process chain
+       using the __call__ method.
+    3. The Process class can be used as an iterator to create a process chain
+       using the __iter__ method.
+    4. The Process class can be used as a callable to create a process chain
+       using the __call__ method.
+
+    Process Chain
+    -------------
+    A process chain is a sequence of processes that are applied to the data
+    one after the other. The process chain can be created as any iterator of
+    Process definitions where state is not needed and instances of Process in
+    case state is needed.
+    It is recommended that load() and transform() be defined as static-methods
+    of the Processes that are do not need access to 'self' (stateless) to
+    perform those operations. This is to ensure the callabalility of those
+    methods, when they are referenced as class definitions.
+    """
+
     def __init__(self, inner_process=None, paths=None, labels=None):
         self.inner_process = inner_process
         self.paths = paths
@@ -145,6 +185,15 @@ class Process:
             except:
                 pass
 
+    @staticmethod
+    def path_decode(load):
+        def wrapper(path):
+            if type(path) is not str:
+                path = path.numpy().decode()
+            return load(path)
+
+        return wrapper
+
     def load(self, path):
         raise NotImplementedError
 
@@ -162,10 +211,13 @@ class Default(Process):
         Instance of the Process class
     """
 
-    def load(self, path):
+    @staticmethod
+    @Process.path_decode
+    def load(path):
         return np.load(path)
 
-    def transform(self, data, label):
+    @staticmethod
+    def transform(data, label):
         return data, label
 
 
@@ -308,10 +360,13 @@ class LoadFif(Process):
         super().__init__(paths=paths, labels=labels)
         self.sr = int(self.load(paths[0]).info["sfreq"])
 
-    def load(self, path):
+    @staticmethod
+    @Process.path_decode
+    def load(path):
         return mne.io.read_raw_fif(path, verbose="ERROR")
 
-    def transform(self, data, label):
+    @staticmethod
+    def transform(data, label):
         data, _ = data[:, :]
         data = data.T
         return data, label

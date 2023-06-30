@@ -3,6 +3,7 @@
 # Last Modified:   2023-06-29
 
 # --Needed functionalities
+# 1. AutoDecorator meta class
 
 # --General
 # 1. Starting Python 3.6 onwards, the standard dict maintains insertion order
@@ -214,3 +215,6 @@ def plot_tfd(tfd, sf, title="test", cmap="magma", figsize=(10, 5)):
     plt.colorbar()
 
     plt.show()
+
+
+# ---AUTO DECORATOR-------------------------------------------------------------

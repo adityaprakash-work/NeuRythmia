@@ -455,7 +455,7 @@ class NRCDataset:
         """
 
         if process_chain is None:
-            process_chain = [self._default_processor]
+            process_chain = [self._default_process]
         if dpath is not None:
             base_dir, dataset_name = os.path.split(dpath)
             nrcd = NRCDataset(base_dir, dataset_name)
@@ -596,6 +596,7 @@ class NRCDataset:
             data, label = process_chain[0].load(path), label
             for process in process_chain[1:]:
                 data, label = process.transform(data, label)
+            return data, label
 
         return cpt
 
@@ -672,7 +673,7 @@ class NRCDataset:
             else:
                 ils = np.array(ils)
         if process_chain is None:
-            process_chain = [self._default_processor]
+            process_chain = [self._default_process]
 
         self.D = None  # Dataset set to None
         if method == "from_generator":
