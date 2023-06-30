@@ -196,10 +196,19 @@ class Process:
 
     @staticmethod
     def tensor_to_ndarray(transform):
-        def wrapper(data, label):
-            if type(data) is not np.ndarray:
-                data = data.numpy()
-            return transform(data, label)
+        def wrapper(*args):
+            if len(args) == 2:
+                data = args[0]
+                if type(data) is not np.ndarray:
+                    data = data.numpy()
+                args[0] = data
+            else:
+                data = args[1]
+                if type(data) is not np.ndarray:
+                    data = data.numpy()
+                args[1] = data
+
+            return transform(*args)
 
         return wrapper
 
