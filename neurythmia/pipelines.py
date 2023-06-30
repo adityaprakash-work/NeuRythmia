@@ -327,7 +327,6 @@ class NRCDataset:
             self._cc = True
             print("NR > No dataset found, create new")
 
-        self.D = None  # td.data.Dataset
         self._default_process = tfm.Default
 
     def create(self, classes=None, file_type=None, ext="npy", data_shape=None):
@@ -676,16 +675,15 @@ class NRCDataset:
         if process_chain is None:
             process_chain = [self._default_process]
 
-        self.D = None  # Dataset set to None
         if method == "from_generator":
             cprocess = self._chain_processes(process_chain, fps, ils)
-            self.D = tf.data.Dataset.from_generator(
+            D = tf.data.Dataset.from_generator(
                 lambda: cprocess, (tf.float32, tf.float32)
             )
         elif method == "map_transforms":
             cpt = self._chain_process_transforms(process_chain)
-            self.D = tf.data.Dataset.from_tensor_slices((fps, ils))
-            self.D = self.D.map(
+            D = tf.data.Dataset.from_tensor_slices((fps, ils))
+            D = D.map(
                 lambda path, label: tf.py_function(
                     cpt, inp=[path, label], Tout=[tf.float32, tf.float32]
                 ),
@@ -696,12 +694,12 @@ class NRCDataset:
             # of Processes. This functionality is not removed from Processes
             # because they are used in writing too, where tf.data.Dataset is
             # not prepared
-            self.D = self.D.ignore_errors()
+            D = D.ignore_errors()
 
         if shuffle:
-            self.D.shuffle(len(fps))
+            D.shuffle(len(fps))
         if batch_size is not None:
-            self.D = self.D.batch(batch_size=batch_size)
-        self.D = self.D.prefetch(tf.data.AUTOTUNE)
+            D = D.batch(batch_size=batch_size)
+        D = D.prefetch(tf.data.AUTOTUNE)
         print(f"NR > Connected to dataset {self.dataset_name}")
-        return self.D
+        return D
