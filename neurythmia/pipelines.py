@@ -594,7 +594,8 @@ class NRCDataset:
     def _chain_process_transforms(self, process_chain):
         def cpt(path, label):
             data, label = process_chain[0].load(path), label
-            for process in process_chain[1:]:
+            # Even root process transform has to be called
+            for process in process_chain:
                 data, label = process.transform(data, label)
             return data, label
 
@@ -695,7 +696,7 @@ class NRCDataset:
             # of Processes. This functionality is not removed from Processes
             # because they are used in writing too, where tf.data.Dataset is
             # not prepared
-            # self.D = self.D.ignore_errors()
+            self.D = self.D.ignore_errors()
 
         if shuffle:
             self.D.shuffle(len(fps))

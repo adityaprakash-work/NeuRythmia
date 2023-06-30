@@ -194,24 +194,6 @@ class Process:
 
         return wrapper
 
-    @staticmethod
-    def tensor_to_ndarray(transform):
-        def wrapper(*args):
-            if len(args) == 2:
-                data = args[0]
-                if type(data) is not np.ndarray:
-                    data = data.numpy()
-                args[0] = data
-            else:
-                data = args[1]
-                if type(data) is not np.ndarray:
-                    data = data.numpy()
-                args[1] = data
-
-            return transform(*args)
-
-        return wrapper
-
     def load(self, path):
         raise NotImplementedError
 
@@ -264,7 +246,6 @@ class TimeSlice(Process):
         self.end = end
         self.sr = sr
 
-    @Process.tensor_to_ndarray
     def transform(self, data, label):
         ts = data.shape[0] / self.sr
         if self.start < ts and self.end < ts:
@@ -302,7 +283,6 @@ class ChannelSelector(Process):
         super().__init__()
         self.channels = channels
 
-    @Process.tensor_to_ndarray
     def transform(self, data, label):
         if data.shape[-1] >= len(self.channels):
             data = data[..., self.channels]
@@ -341,7 +321,6 @@ class CohenTftbP(Process):
         self.kwa = kwargs
         self.coh = CohenTftb(name=self.name, sampling_rate=self.sr, **self.kwa)
 
-    @Process.tensor_to_ndarray
     def transform(self, data, label):
         try:
             data = self.coh(data)
@@ -387,7 +366,6 @@ class LoadFif(Process):
         return mne.io.read_raw_fif(path, verbose="ERROR")
 
     @staticmethod
-    @Process.tensor_to_ndarray
     def transform(data, label):
         data, _ = data[:, :]
         data = data.T
