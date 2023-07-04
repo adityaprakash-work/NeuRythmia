@@ -109,12 +109,15 @@ class NRTrainer:
 
             print()
 
-    def train_batch(self, xb, yb):
-        with tf.GradientTape() as tape:
-            yb_pred = self.model(xb, training=True)
-            loss = self.loss_fn(yb, yb_pred)
-        grads = tape.gradient(loss, self.model.trainable_weights)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+    def train_batch(self, xb, yb, training=True):
+        if training:
+            with tf.GradientTape() as tape:
+                yb_pred = self.model(xb, training=training)
+                loss = self.loss_fn(yb, yb_pred)
+            grads = tape.gradient(loss, self.model.trainable_weights)
+            self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+        else:
+            yb_pred = self.model(xb, training=training)
         for metric in self.metrics:
             metric.update_state(yb, yb_pred)
 
