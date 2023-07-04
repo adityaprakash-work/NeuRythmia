@@ -106,8 +106,12 @@ class NRTrainer:
                 for metric in self.metrics:
                     print(f"{metric.name}: {metric.result().numpy()}")
                     metric.reset_states()
-
             print()
+            self.on_epoch_end()
+
+    def on_epoch_end(self):
+        self.x_aux = self.x_aux.shuffle(self.x_aux_len)
+        self.x_pri = self.x_pri.shuffle(self.x_pri_len)
 
     def train_batch(self, xb, yb, training=True):
         if training:
