@@ -699,7 +699,7 @@ class NRCDataset:
         if shuffle:
             D.shuffle(len(fps))
         if batch_size is not None:
-            D = D.batch(batch_size=batch_size)
+            D = D.batch(batch_size=batch_size, drop_remainder=True)
         D = D.prefetch(tf.data.AUTOTUNE)
         print(f"NR > Connected to dataset {self.dataset_name}")
         return D
