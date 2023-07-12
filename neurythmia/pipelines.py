@@ -327,7 +327,7 @@ class NRCDataset:
             self._cc = True
             print("NR > No dataset found, create new")
 
-        self._default_process = tfm.Default
+        self._default_pc = tfm.ProcessChain("from_generators", [tfm.Default])
 
     def create(self, classes=None, file_type=None, ext="npy", data_shape=None):
         """
@@ -426,6 +426,8 @@ class NRCDataset:
         alt_names=None,
         class_labels=None,
         process_chain=None,
+        save_method=np.save,
+        show_progress_bar=True,
     ):
         """
         Writes processed data to the dataset sourced from another NRCDataset or
@@ -454,7 +456,7 @@ class NRCDataset:
         """
 
         if process_chain is None:
-            process_chain = [self._default_process]
+            process_chain = self._default_pc
         if dpath is not None:
             base_dir, dataset_name = os.path.split(dpath)
             nrcd = NRCDataset(base_dir, dataset_name)
@@ -470,12 +472,16 @@ class NRCDataset:
             fml = list(zip(fns, fls))
 
             print(f"NR > Processing {nrcd.dataset_name} to {self.dataset_name}")
-            pb = tqdm(total=len(fns), desc="source processed")
-            cp = self._chain_processes(process_chain, fps, fml)
-            for data, label in cp:
-                self.write(label[0], label[1], data, bulk=True)
-                pb.update(1)
-            pb.close()
+            D = process_chain.apply(paths=fps, labels=fml)
+            if show_progress_bar:
+                pb = tqdm(total=len(fns), desc="source processed")
+                for data, label in D:
+                    self.write(label[0], label[1], data, True, save_method)
+                    pb.update(1)
+                pb.close()
+            else:
+                for data, label in D:
+                    self.write(label[0], label[1], data, True, save_method)
 
         else:
             fns = [os.path.basename(fp).split(".")[0] for fp in file_paths]
@@ -485,12 +491,16 @@ class NRCDataset:
             fml = list(zip(fns, class_labels))
 
             print(f"NR > Processing files to {self.dataset_name}")
-            pb = tqdm(total=len(fns), desc="source processed")
-            cp = self._chain_processes(process_chain, file_paths, fml)
-            for data, label in cp:
-                self.write(label[0], label[1], data, bulk=True)
-                pb.update(1)
-            pb.close()
+            D = process_chain.apply(paths=file_paths, labels=fml)
+            if show_progress_bar:
+                pb = tqdm(total=len(fns), desc="source processed")
+                for data, label in D:
+                    self.write(label[0], label[1], data, True, save_method)
+                    pb.update(1)
+                pb.close()
+            else:
+                for data, label in D:
+                    self.write(label[0], label[1], data, True, save_method)
         self.metadata.save(opj(self.path, "nrcm.json"))
 
     def erase(self, file_name, tag=None, total_erase=False, bulk=False):
@@ -584,31 +594,15 @@ class NRCDataset:
         else:
             raise ValueError("register(): called on non-existent dataset")
 
-    def _chain_processes(self, process_chain, paths, labels):
-        cp = process_chain[0](paths=paths, labels=labels)
-        for process in process_chain[1:]:
-            cp = process(cp)
-        return cp
-
-    def _chain_process_transforms(self, process_chain):
-        def cpt(path, label):
-            data, label = process_chain[0].load(path), label
-            # Even root process transform has to be called
-            for process in process_chain:
-                data, label = process.transform(data, label)
-            return data, label
-
-        return cpt
-
     def connect(
         self,
         tag_combinations=None,
         batch_size=None,
         shuffle=True,
+        shuffle_buffer_size=None,
         process_chain=None,
         categorical=True,
         enforce_binary=False,
-        method="from_generator",
     ):
         """
         Connects to the dataset and returns a tf.data.Dataset object
@@ -624,8 +618,11 @@ class NRCDataset:
             is None.
         shuffle : bool, optional
             Whether to shuffle the dataset. Default is True.
-        process_chain : list of Processes, optional
-            List of Process objects to be applied to the dataset. If None, no
+        shuffle_buffer_size : int, optional
+            Size of the shuffle buffer. If None, the size is set to the number
+            of files in the dataset. Default is None.
+        process_chain : ProcessChain, optional
+            ProcessChain object to be applied to the dataset. If None, no
             processing is done. Default is None.
         categorical : bool, optional
             Whether to convert the labels to one-hot encoded vectors. Default
@@ -634,11 +631,6 @@ class NRCDataset:
             Whether to enforce binary labels. If True, the labels are
             converted to 0 and 1. If False, the labels are converted to
             one-hot encoded vectors. Default is False.
-        method : str, optional
-            Method to be used for creating the dataset. If 'from_generator',
-            the dataset is created using tf.data.Dataset.from_generator().
-            If 'map_transforms', the dataset is created using
-            tf.data.Dataset.map(). Default is 'from_generator'.
 
 
         Returns
@@ -672,32 +664,16 @@ class NRCDataset:
                 ils = tf.keras.utils.to_categorical(ils, num_classes=n_classes)
             else:
                 ils = np.array(ils)
+
         if process_chain is None:
-            process_chain = [self._default_process]
+            process_chain = self._default_pc
 
-        if method == "from_generator":
-            cprocess = self._chain_processes(process_chain, fps, ils)
-            D = tf.data.Dataset.from_generator(
-                lambda: cprocess, (tf.float32, tf.float32)
-            )
-        elif method == "map_transforms":
-            cpt = self._chain_process_transforms(process_chain)
-            D = tf.data.Dataset.from_tensor_slices((fps, ils))
-            D = D.map(
-                lambda path, label: tf.py_function(
-                    cpt, inp=[path, label], Tout=[tf.float32, tf.float32]
-                ),
-                num_parallel_calls=tf.data.AUTOTUNE,
-                deterministic=False,
-            )
-            # To filter out Exceptions in absence of the escaping yield trick
-            # of Processes. This functionality is not removed from Processes
-            # because they are used in writing too, where tf.data.Dataset is
-            # not prepared
-            D = D.ignore_errors()
-
+        D = process_chain.apply(paths=fps, labels=ils)
         if shuffle:
-            D.shuffle(len(fps))
+            if shuffle_buffer_size is None:
+                D = D.shuffle(len(fps))
+            else:
+                D = D.shuffle(shuffle_buffer_size)
         if batch_size is not None:
             D = D.batch(batch_size=batch_size, drop_remainder=True)
         D = D.prefetch(tf.data.AUTOTUNE)

@@ -15,7 +15,7 @@ URL = "https://github.com/adityaprakash-work/NeuRythmia.git"
 EMAIL = "adityaprakash.work@gmail.com"
 AUTHOR = "Aditya Prakash"
 REQUIRES_PYTHON = ">=3.9.0"
-VERSION = "1.7.2"
+VERSION = None
 REQUIRED = ["mne", "tftb", "tensorflow", "tqdm"]
 EXTRAS = {}
 
@@ -23,18 +23,18 @@ EXTRAS = {}
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Import the README and use it as the long-description.
-# Note: this will only work if 'README.md' is present in your MANIFEST.in file!
+# Note: this will only work if 'README.md' is present in MANIFEST.in file!
 try:
     with io.open(os.path.join(here, "README.md"), encoding="utf-8") as f:
         long_description = "\n" + f.read()
 except FileNotFoundError:
     long_description = DESCRIPTION
 
-# Load the package's __version__.py module as a dictionary.
+# Load the package's __init__.py module as a dictionary.
 about = {}
 if not VERSION:
     project_slug = NAME.lower().replace("-", "_").replace(" ", "_")
-    with open(os.path.join(here, project_slug, "__version__.py")) as f:
+    with open(os.path.join(here, project_slug, "__init__.py")) as f:
         exec(f.read(), about)
 else:
     about["__version__"] = VERSION
@@ -88,7 +88,7 @@ setup(
     python_requires=REQUIRES_PYTHON,
     url=URL,
     packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
-    # If your package is a single module, use this instead of 'packages':
+    # If package is a single module, use this instead of 'packages':
     # py_modules=['mypackage'],
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],

@@ -109,6 +109,139 @@ def window_aggregate(arr, ax0idxs, ax1idxs):
     return warr
 
 
+# ---PROCESS CHAIN--------------------------------------------------------------
+class ProcessChain:
+    """
+    Class to create a process chain
+
+    Parameters
+    ----------
+    processes : list[Process]
+        List of processes to be chained
+
+    Returns
+    -------
+    process_chain : ProcessChain
+        Instance of the ProcessChain class
+    """
+
+    CONNECT_METHODS = [
+        "clubbed_map_transforms",
+        "sequential_map_transforms",
+        "from_generators",
+    ]
+
+    def __init__(self, connect_method, processes):
+        if connect_method not in self.CONNECT_METHODS:
+            raise ValueError(f"Connect method not in {self.CONNECT_METHODS}")
+        self.connect_method = connect_method
+        self.processes = processes
+        for process in self.processes:
+            if self.connect_method not in process.fccm:
+                if self.connect_method not in process.acmh:
+                    raise ValueError(
+                        f"Connect method not compatible with {process.__name__}"
+                    )
+
+    @staticmethod
+    def chaining_asset_0(processes, rooted=True):
+        def cpt(x, y):
+            # if rooted, x, must be path-like
+            if rooted:
+                x, y = processes[0].load(x), y
+            # Even root process transform has to be called so no [1:]
+            for process in processes:
+                x, y = process.transform(x, y)
+            return x, y
+
+        return cpt
+
+    @staticmethod
+    def chaining_asset_1(processes, paths=None, labels=None, rooted=True):
+        if rooted:
+            cp = processes[0](paths=paths, labels=labels)
+        else:
+            cp = processes[0]
+        for process in processes[1:]:
+            cp = process(cp)
+        return cp
+
+    @staticmethod
+    def chaining_asset_2(D, connect_method, processes, rooted=True):
+        def load(x, y):
+            x, y = processes[0].load(x), y
+            x, y = processes[0].transform(x, y)
+            return x, y
+
+        if rooted:
+            D = D.map(
+                lambda x, y: tf.py_function(
+                    load, inp=[x, y], Tout=[tf.float32, tf.float32]
+                ),
+                num_parallel_calls=tf.data.AUTOTUNE,
+                deterministic=False,
+            )
+        for process in processes[1:]:
+            if connect_method in process.acmh:
+                D = process.handler(connect_method=connect_method, D=D)
+            else:
+                D = D.map(
+                    lambda x, y: tf.py_function(
+                        process.transform,
+                        inp=[x, y],
+                        Tout=[tf.float32, tf.float32],
+                    ),
+                    num_parallel_calls=tf.data.AUTOTUNE,
+                    deterministic=False,
+                )
+        return D
+
+    def apply(self, D=None, paths=None, labels=None):
+        if self.connect_method == "clubbed_map_transforms":
+            rooted = False
+            if D is None:
+                D = tf.data.Dataset.from_tensor_slices((paths, labels))
+                rooted = True
+            cpt = self.chaining_asset_0(self.processes, rooted=rooted)
+            D = D.map(
+                lambda x, y: tf.py_function(
+                    cpt, inp=[x, y], Tout=[tf.float32, tf.float32]
+                ),
+                num_parallel_calls=tf.data.AUTOTUNE,
+                deterministic=False,
+            )
+
+        elif self.connect_method == "sequential_map_transforms":
+            rooted = False
+            if D is None:
+                D = tf.data.Dataset.from_tensor_slices((paths, labels))
+                rooted = True
+            D = self.chaining_asset_2(
+                D,
+                "sequential_map_transforms",
+                self.processes,
+                rooted=rooted,
+            )
+
+        elif self.connect_method == "from_generators":
+            rooted = False
+            if D is None:
+                rooted = True
+            cp = self.chaining_asset_1(
+                self.processes, paths=paths, labels=labels, rooted=rooted
+            )
+            D = tf.data.Dataset.from_generator(
+                lambda: cp,
+                (tf.float32, tf.float32),
+            )
+
+        # To filter out Exceptions in absence of the escaping yield trick
+        # of Processes. This functionality is not removed from Processes
+        # because they are used in writing too, where tf.data.Dataset is
+        # not prepared
+        return D.ignore_errors()
+
+
 # ---PROCESSES------------------------------------------------------------------
 class Process:
     """
@@ -122,6 +255,8 @@ class Process:
         List of paths to the files to be loaded
     labels : list[str]
         List of labels corresponding to the files to be loaded
+    compatible_connect_methods : list[str]
+        List of connect methods compatible with the process
 
     Returns
     -------
@@ -149,12 +284,29 @@ class Process:
     of the Processes that are do not need access to 'self' (stateless) to
     perform those operations. This is to ensure the callabalility of those
     methods, when they are referenced as class definitions.
+
+    Handlers
+    ---------
+    Handlers are functions that are used modify the chaining of processes if
+    needed by ProcessChain. It is recommended to implement handlers with a
+    single positional argument, the intended connect method and **kwargs to
+    allow for flexibility in using the handler according to it. If a handler for
+    a particular connect method is implemented, then it is advised to not add
+    the connect method to the compatible_connect_methods list.
     """
+
+    # fully compatible connect methods
+    fccm = ProcessChain.CONNECT_METHODS
+    # alternate connect methods handlers
+    acmh = []
 
     def __init__(self, inner_process=None, paths=None, labels=None):
         self.inner_process = inner_process
         self.paths = paths
         self.labels = labels
+
+    def __name__(self):
+        return self.__class__.__name__
 
     def __iter__(self):
         if self.inner_process is None:
@@ -198,6 +350,9 @@ class Process:
         raise NotImplementedError
 
     def transform(self, data, label):
+        raise NotImplementedError
+
+    def handler(self, connect_method, **kwargs):
         raise NotImplementedError
 
 
@@ -262,6 +417,74 @@ class TimeSlice(Process):
             else:
                 self.sr = 1
         return self
+
+
+class TimePleat(TimeSlice):
+    """
+    Process to 'pleat' data across time axis, resulting in multiple segments
+    being drawn from a single time series.
+
+    Parameters
+    ----------
+    start : int
+        Start index of the slice
+    segment_length : int
+        Length of the segment in seconds
+    overlap : int
+        Overlap between consecutive segments in seconds
+    end : int
+        End index of the slice
+
+    Returns
+    -------
+    process : Process
+        Instance of the Process class
+    """
+
+    fccm = ["from_generators"]
+    acmh = ["sequential_map_transforms"]
+
+    def __init__(self, start, segment_length, overlap=0, end=None, sr=None):
+        super().__init__(start, end, sr)
+        self.sl = segment_length
+        self.overlap = overlap
+
+    def _consume_ip(self):
+        for d, l in self.inner_process:
+            try:
+                pd, pl = self.transform(d, l)
+                for seg, lb in zip(pd, pl):
+                    yield seg, lb
+            except:
+                pass
+
+    def transform(self, data, label):
+        ts = data.shape[0] / self.sr
+        step = self.sl - self.overlap
+        if self.end <= ts and self.end - self.start >= self.sl:
+            _data = []
+            for ss in range(self.start, self.end, step):
+                se = ss + self.sl
+                if se <= self.end:
+                    _data.append(data[ss * self.sr : se * self.sr, ...])
+            data = np.array(_data)
+            label = [label] * data.shape[0]
+            return data, label
+        else:
+            raise Exception
+
+    def handler(self, connect_method, **kwargs):
+        if connect_method == "sequential_map_transforms":
+            D = kwargs["D"]
+            D = D.map(
+                lambda x, y: tf.py_function(
+                    self.transform, inp=[x, y], Tout=[tf.float32, tf.float32]
+                ),
+                num_parallel_calls=tf.data.AUTOTUNE,
+                deterministic=False,
+            )
+            D = D.unbatch()
+            return D
 
 
 class ChannelSelector(Process):
