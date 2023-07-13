@@ -15,7 +15,7 @@ URL = "https://github.com/adityaprakash-work/NeuRythmia.git"
 EMAIL = "adityaprakash.work@gmail.com"
 AUTHOR = "Aditya Prakash"
 REQUIRES_PYTHON = ">=3.9.0"
-VERSION = None
+VERSION = "2.0.1"
 REQUIRED = ["mne", "tftb", "tensorflow", "tqdm"]
 EXTRAS = {}
 
