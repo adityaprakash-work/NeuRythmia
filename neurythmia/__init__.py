@@ -13,7 +13,7 @@ We use semantic versioning (see http://semver.org/) and conform to PEP440 (see
 https://www.python.org/dev/peps/pep-0440/). Release versions are git
 tagged with the version.
 """
-__version__ = (2, 0, 0)
+__version__ = (2, 0, 1)
 
 
 # ---DEPENDENCIES---------------------------------------------------------------

@@ -508,7 +508,10 @@ class ChannelSelector(Process):
 
     def transform(self, data, label):
         if data.shape[-1] >= len(self.channels):
-            data = data[..., self.channels]
+            try:
+                data = data[..., self.channels]
+            except:
+                data = tf.gather(data, self.channels, axis=-1)
             return data, label
         else:
             raise Exception
