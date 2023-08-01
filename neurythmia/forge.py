@@ -16,6 +16,102 @@ class ConvLSTM(tf.keras.Model):
         pass
 
 
+# ---BRAIN2IMAGE----------------------------------------------------------------
+class B2IVAE(tf.keras.Model):
+    def __init__(self, name, input_shape, latent_dim, num_classes, **kwargs):
+        super(B2IVAE, self).__init__(name=name, **kwargs)
+        self.input_shape = input_shape
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+
+        self.encoder = self.build_encoder()
+        self.decoder = self.build_decoder()
+
+    def build_encoder(self):
+        inputs = tf.keras.Input(shape=self.input_shape)
+        x = tf.keras.layers.Conv1D(
+            32, 3, activation="relu", strides=2, padding="causal"
+        )(inputs)
+        x = tf.keras.layers.Conv1D(
+            64, 3, activation="relu", strides=2, padding="causal"
+        )(x)
+        x = tf.keras.layers.Conv1D(
+            128, 3, activation="relu", strides=2, padding="causal"
+        )(x)
+        x = tf.keras.layers.LSTM(128, return_sequences=True)(x)
+        x = tf.keras.layers.LSTM(128)(x)
+        x = tf.keras.layers.Dense(128, activation="relu")(x)
+        z = tf.keras.layers.Dense(self.latent_dim + self.latent_dim)(x)
+        return tf.keras.Model(inputs=inputs, outputs=z)
+
+    def build_decoder(self):
+        inputs = tf.keras.Input(shape=(self.latent_dim,))
+        x = tf.keras.layers.Dense(
+            self.latent_dim * self.latent_dim * 1, activation="relu"
+        )(inputs)
+        x = tf.keras.layers.Reshape((self.latent_dim, self.latent_dim, 1))
+        x = tf.keras.layers.Conv2DTranspose(
+            128,
+            3,
+            activation="relu",
+            strides=2,
+            padding="valid",
+        )(x)
+        x = tf.keras.layers.Conv2DTranspose(
+            64,
+            3,
+            activation="relu",
+            strides=2,
+            padding="valid",
+        )(x)
+        x = tf.keras.layers.Conv2DTranspose(
+            32,
+            3,
+            activation="relu",
+            strides=2,
+            padding="valid",
+        )(x)
+        y = tf.keras.layers.Conv2DTranspose(
+            1,
+            3,
+            strides=1,
+            padding="valid",
+        )(x)
+        return tf.keras.Model(inputs=inputs, outputs=y)
+
+    @tf.function
+    def sample(self, eps=None):
+        if eps is None:
+            eps = tf.random.normal(shape=(100, self.latent_dim))
+        return self.decode(eps, apply_sigmoid=True)
+
+    def encode(self, x):
+        z_mean, z_logvar = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
+        return z_mean, z_logvar
+
+    def reparameterize(self, z_mean, z_logvar):
+        eps = tf.random.normal(shape=z_mean.shape)
+        return eps * tf.exp(z_logvar * 0.5) + z_mean
+
+    def decode(self, z, apply_sigmoid=False):
+        logits = self.decoder(z)
+        if apply_sigmoid:
+            probs = tf.sigmoid(logits)
+            return probs
+        return logits
+
+    def call(self, x):
+        z_mean, z_logvar = self.encode(x)
+        z = self.reparameterize(z_mean, z_logvar)
+        y = self.decode(z)
+        # Add KL divergence regularization loss.
+        kl_loss = -0.5 * tf.reduce_mean(
+            z_logvar - tf.square(z_mean) - tf.exp(z_logvar) + 1
+        )
+        self.add_loss(kl_loss)
+        return y
+
+
 # ---TRAINERS-------------------------------------------------------------------
 class NRTrainer:
     """
