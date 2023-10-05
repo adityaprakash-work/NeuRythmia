@@ -149,6 +149,7 @@ class NRCM:
                 print(f"{key}: {self.nrm[key]}")
 
 
+
 # ---EXTERNAL METADATA UTILS----------------------------------------------------
 def extract_timestamps(time_stamp: str):
     """

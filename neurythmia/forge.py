@@ -11,105 +11,88 @@ from tqdm import tqdm
 
 
 # ---STANDARD MODELS------------------------------------------------------------
-class ConvLSTM(tf.keras.Model):
-    def __init__(self, input_shape, num_classes):
-        pass
-
-
-# ---BRAIN2IMAGE----------------------------------------------------------------
-class B2IVAE(tf.keras.Model):
-    def __init__(self, name, input_shape, latent_dim, num_classes, **kwargs):
-        super(B2IVAE, self).__init__(name=name, **kwargs)
-        self.input_shape = input_shape
+class VariationalImageEncoder(tf.keras.Model):
+    def __init__(self, name, latent_dim=128):
+        super(VariationalImageEncoder, self).__init__(name=name)
         self.latent_dim = latent_dim
-        self.num_classes = num_classes
+        self.conv1 = tf.keras.layers.Conv2D(
+            32, 3, strides=2, padding="same", activation="relu"
+        )
+        self.conv2 = tf.keras.layers.Conv2D(
+            64, 3, strides=2, padding="same", activation="relu"
+        )
+        self.conv3 = tf.keras.layers.Conv2D(
+            128, 3, strides=2, padding="same", activation="relu"
+        )
+        self.flatten = tf.keras.layers.Flatten()
+        self.mu = tf.keras.layers.Dense(latent_dim)
+        self.log_var = tf.keras.layers.Dense(latent_dim)
+        self.z = tf.keras.layers.Lambda(self.reparameterize)
 
-        self.encoder = self.build_encoder()
-        self.decoder = self.build_decoder()
-
-    def build_encoder(self):
-        inputs = tf.keras.Input(shape=self.input_shape)
-        x = tf.keras.layers.Conv1D(
-            32, 3, activation="relu", strides=2, padding="causal"
-        )(inputs)
-        x = tf.keras.layers.Conv1D(
-            64, 3, activation="relu", strides=2, padding="causal"
-        )(x)
-        x = tf.keras.layers.Conv1D(
-            128, 3, activation="relu", strides=2, padding="causal"
-        )(x)
-        x = tf.keras.layers.LSTM(128, return_sequences=True)(x)
-        x = tf.keras.layers.LSTM(128)(x)
-        x = tf.keras.layers.Dense(128, activation="relu")(x)
-        z = tf.keras.layers.Dense(self.latent_dim + self.latent_dim)(x)
-        return tf.keras.Model(inputs=inputs, outputs=z)
-
-    def build_decoder(self):
-        inputs = tf.keras.Input(shape=(self.latent_dim,))
-        x = tf.keras.layers.Dense(
-            self.latent_dim * self.latent_dim * 1, activation="relu"
-        )(inputs)
-        x = tf.keras.layers.Reshape((self.latent_dim, self.latent_dim, 1))
-        x = tf.keras.layers.Conv2DTranspose(
-            128,
-            3,
-            activation="relu",
-            strides=2,
-            padding="valid",
-        )(x)
-        x = tf.keras.layers.Conv2DTranspose(
-            64,
-            3,
-            activation="relu",
-            strides=2,
-            padding="valid",
-        )(x)
-        x = tf.keras.layers.Conv2DTranspose(
-            32,
-            3,
-            activation="relu",
-            strides=2,
-            padding="valid",
-        )(x)
-        y = tf.keras.layers.Conv2DTranspose(
-            1,
-            3,
-            strides=1,
-            padding="valid",
-        )(x)
-        return tf.keras.Model(inputs=inputs, outputs=y)
-
-    @tf.function
-    def sample(self, eps=None):
-        if eps is None:
-            eps = tf.random.normal(shape=(100, self.latent_dim))
-        return self.decode(eps, apply_sigmoid=True)
-
-    def encode(self, x):
-        z_mean, z_logvar = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
-        return z_mean, z_logvar
-
-    def reparameterize(self, z_mean, z_logvar):
-        eps = tf.random.normal(shape=z_mean.shape)
-        return eps * tf.exp(z_logvar * 0.5) + z_mean
-
-    def decode(self, z, apply_sigmoid=False):
-        logits = self.decoder(z)
-        if apply_sigmoid:
-            probs = tf.sigmoid(logits)
-            return probs
-        return logits
+    def reparameterize(self, args):
+        mean, log_var = args
+        eps = tf.random.normal(shape=tf.shape(mean))
+        return eps * tf.exp(log_var * 0.5) + mean
 
     def call(self, x):
-        z_mean, z_logvar = self.encode(x)
-        z = self.reparameterize(z_mean, z_logvar)
-        y = self.decode(z)
-        # Add KL divergence regularization loss.
-        kl_loss = -0.5 * tf.reduce_mean(
-            z_logvar - tf.square(z_mean) - tf.exp(z_logvar) + 1
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.flatten(x)
+        mean = self.mu(x)
+        log_var = self.log_var(x)
+        z = self.z([mean, log_var])
+        return mean, log_var, z
+
+
+class VariationalEEGEncoder(tf.keras.Model):
+    def __init__(self, name, latent_dim=128):
+        super(VariationalEEGEncoder, self).__init__(name=name)
+        self.latent_dim = latent_dim
+        self.lstm = tf.keras.layers.LSTM(128)
+        self.mu = tf.keras.layers.Dense(latent_dim)
+        self.log_var = tf.keras.layers.Dense(latent_dim)
+        self.z = tf.keras.layers.Lambda(self.reparameterize)
+
+    def reparameterize(self, args):
+        mean, log_var = args
+        eps = tf.random.normal(shape=tf.shape(mean))
+        return eps * tf.exp(log_var * 0.5) + mean
+
+    def call(self, x):
+        x = self.lstm(x)
+        mean = self.mu(x)
+        log_var = self.log_var(x)
+        z = self.reparameterize([mean, log_var])
+        return mean, log_var, z
+
+
+class ImageDecoder(tf.keras.Model):
+    def __init__(self, name):
+        super(ImageDecoder, self).__init__(name=name)
+        self.dense = tf.keras.layers.Dense(4 * 4 * 128, activation="relu")
+        self.reshape = tf.keras.layers.Reshape((4, 4, 128))
+        self.convT1 = tf.keras.layers.Conv2DTranspose(
+            128, 3, strides=2, padding="same", activation="relu"
         )
-        self.add_loss(kl_loss)
-        return y
+        self.convT2 = tf.keras.layers.Conv2DTranspose(
+            64, 3, strides=2, padding="same", activation="relu"
+        )
+        self.convT3 = tf.keras.layers.Conv2DTranspose(
+            32, 3, strides=2, padding="same", activation="relu"
+        )
+        self.convT4 = tf.keras.layers.Conv2DTranspose(
+            3, 3, strides=1, padding="same", activation="sigmoid"
+        )
+
+    def call(self, z):
+        x = self.dense(z)
+        x = self.reshape(x)
+        x = self.convT1(x)
+        x = self.convT2(x)
+        x = self.convT3(x)
+        x = self.convT4(x)
+        return x
 
 
 # ---TRAINERS-------------------------------------------------------------------
@@ -228,3 +211,22 @@ class ClsAcc(tf.keras.metrics.Accuracy):
         y_true = tf.argmax(y_true, 1)
         y_pred = tf.argmax(y_pred, 1)
         return super(ClsAcc, self).update_state(y_true, y_pred, sample_weight)
+
+
+# ---LOSSES---------------------------------------------------------------------
+class AnalyticalGaussianKLD:
+    """
+    # Tensorflow 2.0's built-in KLDivergence loss defines it as:
+    # `loss = y_true * log(y_true / y_pred)`
+    # Following is the analytical formula for the KL divergence between two
+    # Gaussian distributions:
+    # `loss = 0.5 * (log(sigma2) - log(sigma1) + (sigma1^2 + (mu1 - mu2)^2) / sigma2^2 - 1)`
+
+    Source - https://math.stackexchange.com/questions/2888353/how-to-analytically-compute-kl-divergence-of-two-gaussian-distributions
+    """
+
+    def __call__(self, mean1, log_var1, mean2=0.0, log_var2=0.0):
+        term1 = log_var2 - log_var1
+        term2 = (tf.exp(log_var1) + tf.square(mean1 - mean2)) / tf.exp(log_var2) - 1.0
+        kl_divergence = 0.5 * (term1 + term2)
+        return tf.reduce_mean(kl_divergence)
